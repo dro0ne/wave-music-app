@@ -70,6 +70,13 @@ input[type=range]:hover::-moz-range-thumb,input[type=range]:focus-visible::-moz-
  .controls .control-buttons{right:8px}
 }
 
+/* Keep app controls above dynamic mobile browser chrome */
+@media(max-width:760px){
+ aside{bottom:var(--browser-bottom,0px)!important}
+ footer{bottom:calc(58px + var(--browser-bottom,0px))!important}
+ main{padding-bottom:calc(170px + var(--browser-bottom,0px))!important}
+}
+
 /* Spacious, touch-friendly phone home screen */
 @media(max-width:760px){
  header{height:72px}.mobile-logo{font-size:25px;letter-spacing:-1px}.mobile-logo:before{content:'▥';color:var(--green);font-size:22px;margin-right:9px}
