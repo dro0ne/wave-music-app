@@ -19,7 +19,7 @@ const TITLES=['Неоновый дождь','Выше облаков','Тихи�
 const ARTISTS=['Luma','Northline','Mira Vee','Slow Frames','Nova Room','Aster','Low Tide'];
 let state=JSON.parse(localStorage.getItem('waveState')||'null')||{mood:'Спокойствие',genres:['Поп','Электроника'],discovery:50,likes:[],history:[]};
 state.likes ||= []; state.history ||= []; state.dislikes ||= []; state.taste ||= {genres:{},artists:{}};
-let queue=[],index=0,playing=false,elapsed=0,timer,audio,media,retuneTimer;
+let queue=[],index=0,playing=false,elapsed=0,timer,audio,media,retuneTimer,streamFailures=0;
 let genreQuery='';
 const tabChannel='BroadcastChannel'in window?new BroadcastChannel('wave-player'):null;
 const $=s=>document.querySelector(s), save=()=>localStorage.setItem('waveState',JSON.stringify(state));
@@ -45,28 +45,35 @@ const shuffle=a=>a.map(x=>[Math.random(),x]).sort((a,b)=>a[0]-b[0]).map(x=>x[1])
 const genreMap=Object.fromEntries(GENRE_PAIRS);
 const moodMap={'Спокойствие':['peaceful','chill','cool','relaxing'],'Энергия':['energizing','fiery','excited','upbeat'],'Фокус':['focused','sophisticated','serious'],'Мечтательно':['dreamy','romantic','sentimental','yearning'],'Вечеринка':['party','excited','upbeat','energizing']};
 function learn(track,value){if(!track)return;state.taste.genres[track.genre]=(state.taste.genres[track.genre]||0)+value;state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+value;save()}
-function normalize(t,m){return {id:t.id,title:t.title,artist:t.user?.name||t.artist||'Audius Artist',genre:t.genre||'Разное',mood:t.mood||m[0],tempo:m[2],color:m[3],duration:t.duration||180,artwork:t.artwork?.['480x480']||t.artwork,stream:t.id?`https://api.audius.co/v1/tracks/${t.id}/stream`:t.stream,releaseDate:t.release_date||t.releaseDate,reason:t._reason||t.reason||'Подобрано для тебя'}}
+function normalize(t,m){return {id:t.id,title:t.title,artist:t.user?.name||t.artist||'Audius Artist',genre:t.genre||'Разное',mood:t.mood||m[0],tempo:m[2],color:m[3],duration:t.duration||180,artwork:t.artwork?.['480x480']||t.artwork,stream:t.stream||(t.id?`https://api.audius.co/v1/tracks/${t.id}/stream`:''),releaseDate:t.release_date||t.releaseDate,reason:t._reason||t.reason||'Подобрано для тебя',source:t.source||'Audius'}}
 function releaseLabel(value){if(!value)return '';let date=new Date(value);return Number.isNaN(date.getTime())?'':date.toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}
+const openAudius=t=>t.is_available!==false&&!t.is_stream_gated&&!t.is_unlisted&&!t.is_delete&&!!t.track_cid;
+async function fetchArchiveTracks(query){
+  let q=encodeURIComponent(`mediatype:audio AND format:"VBR MP3" AND licenseurl:[* TO *] AND (${query||'music'})`),url=`https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&rows=8&output=json`;
+  let search=await fetch(url,{signal:AbortSignal.timeout(9000)}).then(r=>r.json()),docs=search.response?.docs||[];
+  let items=await Promise.all(docs.map(async doc=>{try{let meta=await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`,{signal:AbortSignal.timeout(9000)}).then(r=>r.json());let file=(meta.files||[]).find(f=>['VBR MP3','MP3'].includes(f.format)&&f.name&&!f.name.includes('_64kb'));if(!file)return null;return{id:`ia:${doc.identifier}`,title:doc.title||file.title||doc.identifier,artist:Array.isArray(doc.creator)?doc.creator[0]:doc.creator||'Internet Archive',genre:query||'Открытая музыка',duration:Math.round(+file.length)||180,artwork:`https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,stream:`https://archive.org/download/${encodeURIComponent(doc.identifier)}/${file.name.split('/').map(encodeURIComponent).join('/')}`,source:'Internet Archive',_reason:'Открытая лицензия · Internet Archive'}}catch{return null}}));
+  return items.filter(Boolean)
+}
 async function buildQueue(){
   let m=MOODS.find(x=>x[0]===state.mood)||MOODS[0];
   try{
     let stamp=Date.now(),genreRequests=state.genres.slice(0,4).map(label=>[label,genreMap[label]||label]);
     let urls=[`https://api.audius.co/v1/tracks/trending?limit=50&_=${stamp}`,`https://api.audius.co/v1/tracks/latest?limit=50&_=${stamp}`,`https://api.audius.co/v1/tracks/feeling-lucky?limit=25&_=${stamp}`,...genreRequests.map(([,query])=>`https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=12&_=${stamp}`)];
-    let results=await Promise.all(urls.map(u=>fetch(u,{signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}).catch(()=>({data:[]}))));
-    let trending=results[0].data||[],latest=results[1].data||[],lucky=results[2].data||[];
-    let matched=results.slice(3).flatMap((result,i)=>(result.data||[]).map(t=>({...t,_reason:`Выбран жанр: ${genreRequests[i][0]}`})));
-    if(!trending.length&&!latest.length)throw Error('Каталог временно недоступен');
+    let [results,archive]=await Promise.all([Promise.all(urls.map(u=>fetch(u,{signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}).catch(()=>({data:[]})))),fetchArchiveTracks(genreRequests[0]?.[1]||'music').catch(()=>[])]);
+    let trending=(results[0].data||[]).filter(openAudius),latest=(results[1].data||[]).filter(openAudius),lucky=(results[2].data||[]).filter(openAudius);
+    let matched=results.slice(3).flatMap((result,i)=>(result.data||[]).filter(openAudius).map(t=>({...t,_reason:`Выбран жанр: ${genreRequests[i][0]}`})));
+    if(!trending.length&&!latest.length&&!matched.length&&!archive.length)throw Error('Каталог временно недоступен');
     let wanted=state.genres.map(g=>genreMap[g]).filter(Boolean),wantedMoods=moodMap[state.mood]||[],seenArtists=new Set(state.history.map(x=>x.artist)),blocked=new Set(state.dislikes);
     let score=t=>(wanted.some(g=>(t.genre||'').toLowerCase().includes(g.toLowerCase()))?6:0)+(wantedMoods.some(x=>(t.mood||'').toLowerCase().includes(x))?4:0)+(state.taste.genres[t.genre]||0)+(state.taste.artists[t.user?.name]||0)+Math.random()*2;
     trending=shuffle(trending).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:'По твоим жанрам'}));
     let cutoff=Date.now()-45*24*60*60*1000,datedLatest=latest.filter(t=>{let d=new Date(t.release_date).getTime();return Number.isFinite(d)&&d>=cutoff&&d<=Date.now()+86400000});
     latest=shuffle(datedLatest.length>=10?datedLatest:latest).sort((a,b)=>(score(b)-score(a))+3*(Number(seenArtists.has(a.user?.name))-Number(seenArtists.has(b.user?.name)))).map(t=>({...t,_reason:`Свежий релиз${releaseLabel(t.release_date)?' · '+releaseLabel(t.release_date):''}`}));lucky=shuffle(lucky).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:'Новое открытие'}));
-    matched=shuffle(matched).sort((a,b)=>score(b)-score(a));
+    matched=shuffle([...matched,...archive]).sort((a,b)=>score(b)-score(a));
     let freshCount=Math.round(12*state.discovery/100),genreCount=Math.min(matched.length,Math.max(3,8-freshCount)),familiarCount=15-freshCount-genreCount;
     let familiar=[...state.likes.filter(x=>x.stream).map(t=>({...t,_reason:'Из любимого'})),...trending,...lucky];
     let candidates=[...matched.slice(0,genreCount),...shuffle(familiar).slice(0,Math.max(0,familiarCount)),...latest.slice(0,freshCount)];
     let unique=new Map(candidates.filter(t=>!blocked.has(t.id)).map(t=>[t.id||`${t.artist}-${t.title}`,t]));
-    queue=[...unique.values()].slice(0,15).map(t=>normalize(t,m));if(!queue.length)throw Error('Нет подходящих треков');
+    queue=[...unique.values()].slice(0,30).map(t=>normalize(t,m));if(!queue.length)throw Error('Нет подходящих треков');
   }catch(error){queue=fallbackQueue();toast('Нет связи — включён локальный демо-режим')}
   index=0;
 }
@@ -91,8 +98,8 @@ function sound(t){
     stopSound();media=new Audio();media.dataset.trackId=String(t.id);media.preload='auto';media.volume=+$('#volume').value/100;media.onended=next;
     let originalMeta=$('#artist').textContent,loadTimer=setTimeout(()=>{$('#artist').textContent='Загружаем аудио… обычно 2–5 секунд'},700);
     media.onloadedmetadata=()=>{if(elapsed>0&&elapsed<media.duration)media.currentTime=elapsed};
-    media.oncanplay=()=>{clearTimeout(loadTimer);$('#artist').textContent=originalMeta};media.onplaying=()=>{$('#play .control-icon').textContent='Ⅱ'};
-    media.onerror=()=>{clearTimeout(loadTimer);playing=false;document.body.classList.remove('wave-playing');$('#play .control-icon').textContent='▶';$('#artist').textContent='Не удалось загрузить этот трек';clearInterval(timer);toast('Ошибка потока — попробуй следующий трек')};
+    media.oncanplay=()=>{clearTimeout(loadTimer);$('#artist').textContent=originalMeta};media.onplaying=()=>{$('#play .control-icon').textContent='Ⅱ';streamFailures=0};
+    media.onerror=()=>{clearTimeout(loadTimer);let retry=playing&&streamFailures<8;streamFailures++;playing=false;document.body.classList.remove('wave-playing');$('#play .control-icon').textContent='▶';clearInterval(timer);if(retry){toast('Поток недоступен — включаем следующий');setTimeout(()=>{index=(index+1)%queue.length;load();play()},350)}else{$('#artist').textContent='Источник временно недоступен';toast('Не удалось получить аудио — попробуй позже')}};
     media.src=t.stream;media.play().catch(()=>{clearTimeout(loadTimer);showPlayRequired()});return
   }
   let AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();let master=audio.createGain();master.gain.value=(+$('#volume').value/100)*.08;master.connect(audio.destination);let root=['Энергия','Вечеринка'].includes(t.mood)?146.83:110,notes=[1,1.25,1.5,2],step=0;let pulse=()=>{if(!audio)return;let o=audio.createOscillator(),g=audio.createGain();o.type=t.genre==='Электроника'?'triangle':'sine';o.frequency.value=root*notes[step++%4];g.gain.setValueAtTime(.001,audio.currentTime);g.gain.exponentialRampToValueAtTime(.35,audio.currentTime+.04);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.48);o.connect(g).connect(master);o.start();o.stop(audio.currentTime+.5)};pulse();audio.pulse=setInterval(pulse,60000/t.tempo)}
