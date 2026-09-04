@@ -1,0 +1,10 @@
+{
+  "name": "Волна — музыка под настроение",
+  "short_name": "Волна",
+  "description": "Персональная музыкальная волна",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0b11",
+  "theme_color": "#b9ff4b",
+  "icons": [{"src":"wave-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
