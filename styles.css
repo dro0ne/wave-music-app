@@ -101,6 +101,11 @@ input[type=range]:hover::-moz-range-thumb,input[type=range]:focus-visible::-moz-
  .controls>label{left:10px;right:10px;bottom:5px}.controls>label input{height:4px}
 }
 @media(max-width:350px){.controls #like{display:none}.now{width:calc(100% - 120px)}}
+
+/* Brand mark */
+.logo,.mobile-logo{align-items:center;gap:10px}.logo{display:flex}.brand-icon{width:31px;height:31px;flex:none;overflow:visible}.brand-icon circle{fill:var(--green);stroke:#d9ff9d;stroke-width:1}.brand-icon path{fill:none;stroke:#11150b;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.mobile-logo{display:none}.mobile-logo b{font:800 25px/1 Manrope,sans-serif;letter-spacing:-1px}
+body.wave-playing .brand-icon path{animation:brandBeat .8s ease-in-out infinite alternate;transform-origin:center}@keyframes brandBeat{to{transform:scaleY(.7)}}
+@media(max-width:760px){.mobile-logo{display:flex}.mobile-logo:before{content:none}.mobile-logo .brand-icon{width:29px;height:29px}}
 @media(max-width:390px){.controls #dislike{display:none}.now{max-width:calc(100% - 165px)}.hero h1{font-size:42px}}
 
 /* Final compact phone player */
