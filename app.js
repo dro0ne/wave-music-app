@@ -21,8 +21,10 @@ let state=JSON.parse(localStorage.getItem('waveState')||'null')||{mood:'Спок
 state.likes ||= []; state.history ||= []; state.dislikes ||= []; state.taste ||= {genres:{},artists:{}};
 let queue=[],index=0,playing=false,elapsed=0,timer,audio,media,retuneTimer,streamFailures=0;
 let genreQuery='';
+let searchResults=[],searchTimer,searchRequest=0;
 const tabChannel='BroadcastChannel'in window?new BroadcastChannel('wave-player'):null;
 const $=s=>document.querySelector(s), save=()=>localStorage.setItem('waveState',JSON.stringify(state));
+const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 function paintRange(input){input.style.setProperty('--value',`${(input.value-input.min)/(input.max-input.min)*100}%`)}
 document.querySelectorAll('input[type="range"]').forEach(input=>{paintRange(input);input.addEventListener('input',()=>paintRange(input))});
 function choices(){
@@ -37,6 +39,21 @@ function choices(){
 $('#moods').onclick=e=>{let b=e.target.closest('[data-mood]');if(b&&state.mood!==b.dataset.mood){state.mood=b.dataset.mood;save();choices();scheduleRetune('Настроение изменено — перестраиваем волну')}};
 $('#genres').onclick=e=>{let b=e.target.closest('[data-genre]');if(!b)return;let g=b.dataset.genre;state.genres=state.genres.includes(g)?state.genres.filter(x=>x!==g):[...state.genres,g];save();choices();scheduleRetune('Жанры изменены — перестраиваем волну')};
 $('#genreSearch').oninput=e=>{genreQuery=e.target.value.trim().toLocaleLowerCase('ru');choices()};
+function renderMusicResults(message=''){
+  let box=$('#musicResults');
+  if(message){box.innerHTML=`<div class="search-message">${escapeHtml(message)}</div>`;box.classList.add('open');return}
+  if(!searchResults.length){box.classList.remove('open');box.innerHTML='';return}
+  box.innerHTML=searchResults.map((t,i)=>`<button class="music-result" data-search-index="${i}"><img src="${escapeHtml(t.artwork?.['150x150']||t.artwork?.['480x480']||'wave-icon.svg')}" alt=""><span><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.user?.name||'Исполнитель')}${t.album_name?` · Альбом: ${escapeHtml(t.album_name)}`:''}</small></span><i>▶</i></button>`).join('');box.classList.add('open')
+}
+async function searchMusic(value){
+  let query=value.trim(),request=++searchRequest;if(query.length<2){searchResults=[];renderMusicResults();return}
+  renderMusicResults('Ищем треки и альбомы…');
+  try{let response=await fetch(`https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=12`,{signal:AbortSignal.timeout(9000)});if(!response.ok)throw Error(response.status);let json=await response.json();if(request!==searchRequest)return;searchResults=(json.data||[]).filter(openAudius);renderMusicResults(searchResults.length?'':'Ничего не найдено')}
+  catch{if(request===searchRequest){searchResults=[];renderMusicResults('Поиск временно недоступен')}}
+}
+$('#musicSearch').oninput=e=>{clearTimeout(searchTimer);let value=e.target.value;if(value.trim().length<2){searchRequest++;searchResults=[];renderMusicResults();return}searchTimer=setTimeout(()=>searchMusic(value),320)};
+$('#musicResults').onclick=e=>{let button=e.target.closest('[data-search-index]');if(!button)return;let track=searchResults[+button.dataset.searchIndex];if(!track)return;let m=MOODS.find(x=>x[0]===state.mood)||MOODS[0],chosen=normalize({...track,_reason:track.album_name?`Альбом: ${track.album_name}`:'Найдено через поиск'},m);pause();queue=[chosen,...queue.filter(t=>t.id!==chosen.id)];index=0;$('#player').classList.add('visible');load();play();$('#musicResults').classList.remove('open')};
+document.addEventListener('click',e=>{if(!e.target.closest('.music-search'))$('#musicResults').classList.remove('open')});
 $('#discovery').value=state.discovery;paintRange($('#discovery'));
 $('#discovery').oninput=e=>{state.discovery=+e.target.value;$('#discoverText').textContent=state.discovery<35?'В основном музыка, похожая на любимую':state.discovery>65?'Больше незнакомых исполнителей':'Поровну знакомого и новых открытий';save()};
 $('#discovery').onchange=()=>scheduleRetune(state.discovery>65?'Ищем свежие релизы':'Обновляем баланс подборки');
