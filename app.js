@@ -74,23 +74,25 @@ async function fetchArchiveTracks(query){
 async function buildQueue(){
   let m=MOODS.find(x=>x[0]===state.mood)||MOODS[0];
   try{
-    let stamp=Date.now(),genreRequests=state.genres.slice(0,4).map(label=>[label,genreMap[label]||label]);
-    let urls=[`https://api.audius.co/v1/tracks/trending?limit=50&_=${stamp}`,`https://api.audius.co/v1/tracks/latest?limit=50&_=${stamp}`,`https://api.audius.co/v1/tracks/feeling-lucky?limit=25&_=${stamp}`,...genreRequests.map(([,query])=>`https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=12&_=${stamp}`)];
+    let stamp=Date.now(),genreRequests=state.genres.slice(0,8).map(label=>[label,genreMap[label]||label]);
+    let urls=[`https://api.audius.co/v1/tracks/trending?limit=100&_=${stamp}`,`https://api.audius.co/v1/tracks/latest?limit=100&_=${stamp}`,`https://api.audius.co/v1/tracks/feeling-lucky?limit=100&_=${stamp}`,...genreRequests.map(([,query])=>`https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=50&_=${stamp}`)];
     let [results,archive]=await Promise.all([Promise.all(urls.map(u=>fetch(u,{signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}).catch(()=>({data:[]})))),fetchArchiveTracks(genreRequests[0]?.[1]||'music').catch(()=>[])]);
     let trending=(results[0].data||[]).filter(openAudius),latest=(results[1].data||[]).filter(openAudius),lucky=(results[2].data||[]).filter(openAudius);
     let matched=results.slice(3).flatMap((result,i)=>(result.data||[]).filter(openAudius).map(t=>({...t,_reason:`Выбран жанр: ${genreRequests[i][0]}`})));
     if(!trending.length&&!latest.length&&!matched.length&&!archive.length)throw Error('Каталог временно недоступен');
     let wanted=state.genres.map(g=>genreMap[g]).filter(Boolean),wantedMoods=moodMap[state.mood]||[],seenArtists=new Set(state.history.map(x=>x.artist)),blocked=new Set(state.dislikes);
-    let score=t=>(wanted.some(g=>(t.genre||'').toLowerCase().includes(g.toLowerCase()))?6:0)+(wantedMoods.some(x=>(t.mood||'').toLowerCase().includes(x))?4:0)+(state.taste.genres[t.genre]||0)+(state.taste.artists[t.user?.name]||0)+Math.random()*2;
-    trending=shuffle(trending).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:'По твоим жанрам'}));
+    let text=t=>`${t.genre||''} ${t.mood||''} ${t.tags||''} ${t.title||''}`.toLowerCase(),genreFit=t=>wanted.some(g=>text(t).includes(g.toLowerCase())),moodFit=t=>wantedMoods.some(x=>text(t).includes(x));
+    let score=t=>(genreFit(t)?12:0)+(moodFit(t)?5:0)+(state.taste.genres[t.genre]||0)*2+(state.taste.artists[t.user?.name]||0)*2+(seenArtists.has(t.user?.name)?-1:2)+Math.random()*4;
+    let explain=t=>genreFit(t)?`Подходит по жанру: ${t.genre||state.genres[0]}`:moodFit(t)?`Подходит под настроение: ${state.mood}`:state.taste.artists[t.user?.name]>0?'Похожий исполнитель понравился тебе':'Новое открытие по твоему вкусу';
+    trending=shuffle(trending).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:explain(t)}));
     let cutoff=Date.now()-45*24*60*60*1000,datedLatest=latest.filter(t=>{let d=new Date(t.release_date).getTime();return Number.isFinite(d)&&d>=cutoff&&d<=Date.now()+86400000});
     latest=shuffle(datedLatest.length>=10?datedLatest:latest).sort((a,b)=>(score(b)-score(a))+3*(Number(seenArtists.has(a.user?.name))-Number(seenArtists.has(b.user?.name)))).map(t=>({...t,_reason:`Свежий релиз${releaseLabel(t.release_date)?' · '+releaseLabel(t.release_date):''}`}));lucky=shuffle(lucky).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:'Новое открытие'}));
     matched=shuffle([...matched,...archive]).sort((a,b)=>score(b)-score(a));
-    let freshCount=Math.round(12*state.discovery/100),genreCount=Math.min(matched.length,Math.max(3,8-freshCount)),familiarCount=15-freshCount-genreCount;
+    let target=60,freshCount=Math.round(18*state.discovery/100),genreCount=Math.min(matched.length,Math.max(24,42-freshCount)),familiarCount=Math.max(10,target-freshCount-genreCount);
     let familiar=[...state.likes.filter(x=>x.stream).map(t=>({...t,_reason:'Из любимого'})),...trending,...lucky];
-    let candidates=[...matched.slice(0,genreCount),...shuffle(familiar).slice(0,Math.max(0,familiarCount)),...latest.slice(0,freshCount)];
+    let candidates=shuffle([...matched.slice(0,genreCount),...shuffle(familiar).slice(0,familiarCount),...latest.slice(0,freshCount),...matched.slice(genreCount)]).sort((a,b)=>score(b)-score(a));
     let unique=new Map(candidates.filter(t=>!blocked.has(t.id)).map(t=>[t.id||`${t.artist}-${t.title}`,t]));
-    queue=[...unique.values()].slice(0,30).map(t=>normalize(t,m));if(!queue.length)throw Error('Нет подходящих треков');
+    queue=[...unique.values()].slice(0,target).map(t=>normalize(t,m));if(!queue.length)throw Error('Нет подходящих треков');
   }catch(error){queue=fallbackQueue();toast('Нет связи — включён локальный демо-режим')}
   index=0;
 }
