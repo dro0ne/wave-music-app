@@ -87,20 +87,26 @@ async function buildQueue(){
     trending=shuffle(trending).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:explain(t)}));
     let cutoff=Date.now()-45*24*60*60*1000,datedLatest=latest.filter(t=>{let d=new Date(t.release_date).getTime();return Number.isFinite(d)&&d>=cutoff&&d<=Date.now()+86400000});
     latest=shuffle(datedLatest.length>=10?datedLatest:latest).sort((a,b)=>(score(b)-score(a))+3*(Number(seenArtists.has(a.user?.name))-Number(seenArtists.has(b.user?.name)))).map(t=>({...t,_reason:`Свежий релиз${releaseLabel(t.release_date)?' · '+releaseLabel(t.release_date):''}`}));lucky=shuffle(lucky).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:'Новое открытие'}));
-    matched=shuffle([...matched,...archive]).sort((a,b)=>score(b)-score(a));
-    let target=60,freshCount=Math.round(18*state.discovery/100),genreCount=Math.min(matched.length,Math.max(24,42-freshCount)),familiarCount=Math.max(10,target-freshCount-genreCount);
+    matched=shuffle([...matched,...archive]).filter(genreFit).sort((a,b)=>score(b)-score(a)).map(t=>({...t,_reason:moodFit(t)?`Подходит: ${state.mood.toLowerCase()} · ${t.genre}`:`Выбран жанр: ${t.genre||state.genres[0]}`}));
+    let target=60,freshCount=Math.round(12*state.discovery/100),genreCount=Math.min(matched.length,Math.max(36,48-freshCount)),familiarCount=Math.max(6,target-freshCount-genreCount);
     let familiar=[...state.likes.filter(x=>x.stream).map(t=>({...t,_reason:'Из любимого'})),...trending,...lucky];
-    let candidates=shuffle([...matched.slice(0,genreCount),...shuffle(familiar).slice(0,familiarCount),...latest.slice(0,freshCount),...matched.slice(genreCount)]).sort((a,b)=>score(b)-score(a));
+    let moodAndGenre=matched.filter(moodFit),genreOnly=matched.filter(t=>!moodFit(t));
+    let candidates=[...shuffle(moodAndGenre),...shuffle(genreOnly).slice(0,genreCount),...shuffle(familiar).sort((a,b)=>score(b)-score(a)).slice(0,familiarCount),...latest.slice(0,freshCount),...genreOnly.slice(genreCount)];
     let unique=new Map(candidates.filter(t=>!blocked.has(t.id)).map(t=>[t.id||`${t.artist}-${t.title}`,t]));
     queue=[...unique.values()].slice(0,target).map(t=>normalize(t,m));if(!queue.length)throw Error('Нет подходящих треков');
   }catch(error){queue=fallbackQueue();toast('Нет связи — включён локальный демо-режим')}
   index=0;
 }
 const current=()=>queue[index], fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-async function start(){let button=$('#start');button.disabled=true;button.querySelector('strong').textContent='Настраиваем волну…';$('#player').classList.add('visible');$('#title').textContent='Собираем твою волну…';$('#artist').textContent='Получаем треки из каталога';await buildQueue();button.disabled=false;button.querySelector('strong').textContent='Перезапустить мою волну';load();play()}
+function unlockPlayback(){
+  if(media)return;
+  media=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+  media.dataset.unlock='true';media.volume=0;media.play().catch(()=>{});
+}
+async function start(){unlockPlayback();let button=$('#start');button.disabled=true;button.querySelector('strong').textContent='Настраиваем волну…';$('#player').classList.add('visible');$('#title').textContent='Собираем твою волну…';$('#artist').textContent='Получаем треки из каталога';await buildQueue();button.disabled=false;button.querySelector('strong').textContent='Перезапустить мою волну';load();play()}
 async function retune(message){if(!queue.length)return;let resume=playing;pause();toast(message);await buildQueue();load();if(resume)play()}
 function scheduleRetune(message){if(!queue.length)return;clearTimeout(retuneTimer);retuneTimer=setTimeout(()=>retune(message),450)}
-function load(){let t=current();if(!t)return;stopSound();elapsed=0;$('#title').textContent=t.title;$('#artist').textContent=`${t.artist} · ${t.genre} · ${t.reason}`;$('.cover').style.background=t.artwork?`center/cover url("${t.artwork}")`:`linear-gradient(135deg,${t.color},#17131e)`;$('#duration').textContent=fmt(t.duration);$('#time').textContent='0:00';$('#progress').value=0;paintRange($('#progress'));updateMediaSession(t);state.history=[t,...state.history.filter(x=>x.title!==t.title)].slice(0,20);save();libraries();likeVisual()}
+function load(){let t=current();if(!t)return;stopSound(true);elapsed=0;$('#title').textContent=t.title;$('#artist').textContent=`${t.artist} · ${t.genre} · ${t.reason}`;$('.cover').style.background=t.artwork?`center/cover url("${t.artwork}")`:`linear-gradient(135deg,${t.color},#17131e)`;$('#duration').textContent=fmt(t.duration);$('#time').textContent='0:00';$('#progress').value=0;paintRange($('#progress'));updateMediaSession(t);state.history=[t,...state.history.filter(x=>x.title!==t.title)].slice(0,20);save();libraries();likeVisual()}
 function updateMediaSession(t){
   document.title=`${t.title} — ${t.artist} | Волна`;
   if(!('mediaSession'in navigator))return;
@@ -114,7 +120,7 @@ function prev(){pause();index=(index-1+queue.length)%queue.length;load();play()}
 function sound(t){
   if(t.stream&&media?.dataset.trackId===String(t.id)){media.play().catch(()=>showPlayRequired());return}
   if(t.stream){
-    stopSound();media=new Audio();media.dataset.trackId=String(t.id);media.preload='auto';media.volume=+$('#volume').value/100;media.onended=next;
+    let unlocked=media?.dataset.unlock==='true';if(!unlocked){stopSound();media=new Audio()}else{media.pause();media.removeAttribute('src')};delete media.dataset.unlock;media.dataset.trackId=String(t.id);media.preload='auto';media.volume=+$('#volume').value/100;media.onended=next;
     let originalMeta=$('#artist').textContent,loadTimer=setTimeout(()=>{$('#artist').textContent='Загружаем аудио… обычно 2–5 секунд'},700);
     media.onloadedmetadata=()=>{if(elapsed>0&&elapsed<media.duration)media.currentTime=elapsed};
     media.oncanplay=()=>{clearTimeout(loadTimer);$('#artist').textContent=originalMeta};media.onplaying=()=>{$('#play .control-icon').textContent='Ⅱ';streamFailures=0};
@@ -123,7 +129,7 @@ function sound(t){
   }
   let AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();let master=audio.createGain();master.gain.value=(+$('#volume').value/100)*.08;master.connect(audio.destination);let root=['Энергия','Вечеринка'].includes(t.mood)?146.83:110,notes=[1,1.25,1.5,2],step=0;let pulse=()=>{if(!audio)return;let o=audio.createOscillator(),g=audio.createGain();o.type=t.genre==='Электроника'?'triangle':'sine';o.frequency.value=root*notes[step++%4];g.gain.setValueAtTime(.001,audio.currentTime);g.gain.exponentialRampToValueAtTime(.35,audio.currentTime+.04);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.48);o.connect(g).connect(master);o.start();o.stop(audio.currentTime+.5)};pulse();audio.pulse=setInterval(pulse,60000/t.tempo)}
 function showPlayRequired(){playing=false;document.body.classList.remove('wave-playing');$('#play .control-icon').textContent='▶';clearInterval(timer);$('#artist').textContent='Нажми ▶ для запуска звука';toast('Браузер ждёт нажатия кнопки ▶')}
-function stopSound(){if(media){media.onended=null;media.onerror=null;media.oncanplay=null;media.onplaying=null;media.pause();media.removeAttribute('src');media.load();media=null}if(audio){clearInterval(audio.pulse);audio.close();audio=null}}
+function stopSound(preserveUnlock=false){if(media&&!(preserveUnlock&&media.dataset.unlock==='true')){media.onended=null;media.onerror=null;media.oncanplay=null;media.onplaying=null;media.pause();media.removeAttribute('src');media.load();media=null}if(audio){clearInterval(audio.pulse);audio.close();audio=null}}
 function likeVisual(){let yes=current()&&state.likes.some(x=>x.title===current().title);$('#like .control-icon').textContent=yes?'♥':'♡';$('#like').classList.toggle('liked',yes);$('#like').setAttribute('aria-label',yes?'Убрать из любимых':'Добавить в любимые')}
 function toggleLike(){let t=current();if(!t)return;let yes=state.likes.some(x=>x.title===t.title);state.likes=yes?state.likes.filter(x=>x.title!==t.title):[t,...state.likes];learn(t,yes?-2:2);save();libraries();likeVisual();toast(yes?'Убрано из любимых':'Вкус обновлён — будет больше похожего')}
 function list(a,msg){return a.length?a.map(t=>`<div class="track"><i style="--color:${t.color}">♪</i><span><strong>${t.title}</strong><small>${t.artist} · ${t.genre}</small></span><time>${fmt(t.duration)}</time></div>`).join(''):`<div class="empty">${msg}</div>`}
