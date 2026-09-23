@@ -1,0 +1,9 @@
+const results=[];function test(name,fn){try{fn();results.push(`PASS ${name}`)}catch(error){results.push(`FAIL ${name}: ${error.message}`)}}function assert(value,message){if(!value)throw Error(message)}let request=new XMLHttpRequest();request.open('GET','../app.js',false);request.send();const source=request.responseText;
+test('buffer is current next backup only',()=>assert(source.includes('playbackBuffer={current:null,next:null,backupNext:null}')&&!source.includes('buildQueue('),'small buffer missing'));
+test('preload does not record history',()=>{let body=source.match(/function preloadTrack\([\s\S]*?\n}/)?.[0]||'';assert(body&&!body.includes('recordPlayback')&&!body.includes('recordEvent'),'preload records listening')});
+test('preload invalidation uses request id',()=>assert(source.includes('preloadRequestId++')&&source.includes("invalidateNextBuffer('mood')")&&source.includes("invalidateNextBuffer('discovery')"),'stale preload guard missing'));
+test('reserved ids protect anti-repeat',()=>assert(source.includes('reservedIds.has(WaveRecommendation.idOf(t))'),'reserved buffer tracks are eligible'));
+test('media events drive player state',()=>['onplay','onplaying','onpause','onwaiting','onstalled','oncanplay','onended','onerror'].forEach(event=>assert(source.includes(event),`${event} missing`)));
+test('ready next path reports latency',()=>assert(source.includes('PRELOAD_SWAP')&&source.includes('NEXT_LATENCY_MS'),'swap metrics missing'));
+test('failed next has backup',()=>assert(source.includes('playbackBuffer.backupNext')&&source.includes("next('error',true)"),'backup error path missing'));
+let failed=results.filter(x=>x.startsWith('FAIL')).length;document.querySelector('#results').textContent=`${failed?'FAILED':'PASSED'}\n${results.join('\n')}`;document.body.dataset.failed=String(failed);

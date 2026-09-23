@@ -1,5 +1,5 @@
-const CACHE='wave-shell-v10';
-const SHELL=['./','./index.html','./styles.css?v=7','./recommendation-config.js?v=6','./recommendation-engine.js?v=6','./app.js?v=15','./manifest.webmanifest?v=3','./wave-icon.svg'];
+const CACHE='wave-shell-v11';
+const SHELL=['./','./index.html','./styles.css?v=7','./recommendation-config.js?v=6','./recommendation-engine.js?v=6','./sources/source-config.js?v=1','./sources/track-model.js?v=1','./sources/audius-source.js?v=1','./sources/archive-source.js?v=1','./sources/soundcloud-source.js?v=1','./sources/source-manager.js?v=1','./app.js?v=15','./manifest.webmanifest?v=3','./wave-icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET'||new URL(event.request.url).origin!==location.origin)return;event.respondWith(fetch(event.request).then(response=>{let copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}).catch(()=>caches.match(event.request)))})
