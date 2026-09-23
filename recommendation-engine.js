@@ -76,7 +76,7 @@
     let stats=state.trackStats?.[id]||{},explicitDislike=(state.dislikes||[]).includes(id),skip=clamp((stats.skips||0)*C.penalties.skip,0,.75)+((stats.dislikes||explicitDislike)?C.feedback.dislikeTrackPenalty:0),albumPenalty=albumCount*C.penalties.sameAlbum;
     return {repeatPenalty:repeat,artistRepeatPenalty:artist,skipPenalty:skip,albumPenalty};
   }
-  function selectionType(track,state,selectedGenres){let stats=state.trackStats?.[idOf(track)],liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));if(liked||stats?.plays>0)return'FAMILIAR';return tasteCompatibility(track,state,selectedGenres)>=.63?'DISCOVERY':'EXPERIMENT'}
+  function selectionType(track,state,selectedGenres){let stats=state.trackStats?.[idOf(track)]||{},liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));if(liked||(stats.completed||0)>0||((stats.plays||0)>=2&&(stats.skips||0)<(stats.plays||0)))return'FAMILIAR';return tasteCompatibility(track,state,selectedGenres)>=.63?'DISCOVERY':'EXPERIMENT'}
   function mixWeight(type,n){let key=type.toLowerCase(),range=C.mix[key];return lerp(range.start,range.end,n)}
   function weightedFactor(score,weight,neutral=1){return Math.max(.08,1+(score-neutral)*weight)}
   function scoreTrack(track,context){
@@ -90,11 +90,25 @@
   function getRankedCandidates(catalog,context,limit=15){
     return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
   }
+  function isRecentlyPlayed(track,session,windowSize=C.hardTrackBlock){let id=idOf(track);return session.previousTracks.slice(-windowSize).some(previous=>String(previous.id)===id)}
+  function eligibleCandidates(catalog,session){
+    let source=catalog.filter(Boolean),stages=[[C.hardTrackBlock,10],[C.hardTrackBlockRelaxed,5],[C.hardTrackBlockMinimum,1]];
+    for(let [windowSize,minimum] of stages){let candidates=source.filter(track=>!isRecentlyPlayed(track,session,windowSize));if(candidates.length>=minimum)return {candidates,windowSize,hardBlockedCount:source.length-candidates.length}}
+    let windowSize=Math.min(3,session.previousTracks.length),candidates=source.filter(track=>!isRecentlyPlayed(track,session,windowSize));return {candidates,windowSize,hardBlockedCount:source.length-candidates.length};
+  }
+  function sampleCandidatesWithoutReplacement(scored,limit,random=Math.random){
+    let remaining=scored.slice(),ordered=[];
+    while(remaining.length&&ordered.length<limit){let floor=remaining.at(-1).finalScore,weights=remaining.map(x=>Math.exp((x.finalScore-floor)/C.temperature)),pick=random()*weights.reduce((a,b)=>a+b,0),chosenIndex=0;for(let i=0;i<remaining.length;i++){pick-=weights[i];if(pick<=0){chosenIndex=i;break}}ordered.push(remaining.splice(chosenIndex,1)[0])}
+    return ordered;
+  }
+  function getWeightedCandidateOrder(catalog,context,limit=C.candidateTopK,random=Math.random){
+    let eligible=eligibleCandidates(catalog,context.session),ranked=getRankedCandidates(eligible.candidates,context,C.candidateTopK),rankById=new Map(ranked.map((x,i)=>[idOf(x.track),i+1])),ordered=sampleCandidatesWithoutReplacement(ranked,Math.min(limit,ranked.length),random);
+    return ordered.map((candidate,index)=>({...candidate,rankBeforeSampling:rankById.get(idOf(candidate.track)),sampledPosition:index+1,hardBlockedCount:eligible.hardBlockedCount,eligibleCandidateCount:eligible.candidates.length,candidatePoolSize:ranked.length,hardBlockWindow:eligible.windowSize}));
+  }
   function getNextTrack(catalog,context,random=Math.random){
-    let pool=getRankedCandidates(catalog,context,C.candidateTopK);if(!pool.length)return null;
-    let floor=pool.at(-1).finalScore,weights=pool.map(x=>Math.exp((x.finalScore-floor)/C.temperature)),pick=random()*weights.reduce((a,b)=>a+b,0),chosen=pool[0];for(let i=0;i<pool.length;i++){pick-=weights[i];if(pick<=0){chosen=pool[i];break}}
+    let chosen=getWeightedCandidateOrder(catalog,context,1,random)[0];if(!chosen)return null;
     context.session.currentTrackId=idOf(chosen.track);if(!context.session.seedTrackId)context.session.seedTrackId=context.session.currentTrackId;
     return chosen;
   }
-  global.WaveRecommendation={createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,getRankedCandidates,getNextTrack,idOf};
+  global.WaveRecommendation={createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,isRecentlyPlayed,eligibleCandidates,sampleCandidatesWithoutReplacement,getWeightedCandidateOrder,getRankedCandidates,getNextTrack,idOf};
 })(window);

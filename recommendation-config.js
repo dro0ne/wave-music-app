@@ -1,12 +1,15 @@
 window.WAVE_RECOMMENDATION_CONFIG={
-  historyWindow:20,
+  historyWindow:50,
   recentTrackBlock:8,
-  candidateTopK:12,
-  temperature:0.16,
+  hardTrackBlock:25,
+  hardTrackBlockRelaxed:15,
+  hardTrackBlockMinimum:8,
+  candidateTopK:24,
+  temperature:0.30,
   mix:{
-    familiar:{start:.85,end:.20},
-    discovery:{start:.10,end:.55},
-    experiment:{start:.05,end:.25}
+    familiar:{start:.85,end:0},
+    discovery:{start:.10,end:.65},
+    experiment:{start:.05,end:.40}
   },
   weights:{preference:.25,similarity:.18,mood:.22,userNovelty:.22,releaseNovelty:.05,diversity:.08},
   penalties:{sameTrack:1.25,recentTrack:.72,sameArtist:.34,recentArtist:.16,sameAlbum:.18,genreStreak:.12,skip:.22},
