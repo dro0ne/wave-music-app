@@ -11,21 +11,24 @@
   }
   function updateWavePreferences(session,patch){if(patch.mood!==undefined)session.currentMood=patch.mood;if(patch.noveltyLevel!==undefined)session.noveltyLevel=clamp(Number(patch.noveltyLevel));return session}
   function ensureStats(state,id){state.trackStats||={};return state.trackStats[id]||={plays:0,completed:0,skips:0,likes:0,dislikes:0,lastPlayedAt:null,recentPlayDates:[]}}
-  function recordEvent(state,session,track,event,progressRatio=0){
-    if(!track)return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(progressRatio);
+  function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{}};state.taste.genres||={};state.taste.artists||={};state.taste.genres[track.genre]=(state.taste.genres[track.genre]||0)+genreSignal;state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
+  function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,20)}
+  function recordEvent(state,session,track,event,details=0){
+    if(!track)return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
     if(['ended','next','skip','dislike','error'].includes(event)){
       stats.plays++;stats.lastPlayedAt=now;stats.recentPlayDates=[now,...(stats.recentPlayDates||[]).filter(x=>daysSince(x)<7)].slice(0,20);
       if(event==='ended'||ratio>=.85)stats.completed++;
       if(event!=='error'&&(event==='dislike'||ratio<.15))stats.skips+=2;else if(event!=='error'&&ratio<.5)stats.skips+=1;
       if(event!=='error'){
-        let signal=event==='dislike'?-3:ratio<.15?-2:ratio<.5?-.6:ratio<.85?.2:1.4;state.taste||={genres:{},artists:{}};state.taste.genres||={};state.taste.artists||={};
-        state.taste.genres[track.genre]=(state.taste.genres[track.genre]||0)+signal;state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+signal;
+        if(event==='dislike')changeTaste(state,track,C.feedback.dislikeArtistSignal,C.feedback.dislikeGenreSignal);
+        else {let signal=ratio<.15?-1:ratio<.5?-.35:ratio<.85?.15:1;changeTaste(state,track,signal*.65,signal*.22)}
       }
       session.previousTracks.push({id,title:track.title,artist:track.artist,album:track.album||track.albumName||'',genre:track.genre,playedAt:now,progressRatio:ratio,event});session.previousTracks=session.previousTracks.slice(-C.historyWindow);
+      if(event!=='error'&&listenedSeconds>0)addToHistory(state,track);
     }
-    if(event==='like')stats.likes++;
-    if(event==='unlike')stats.likes=Math.max(0,stats.likes-1);
-    if(event==='dislike')stats.dislikes++;
+    if(event==='like'){state.likes||=[];if(!state.likes.some(x=>idOf(x)===id))state.likes=[track,...state.likes];stats.likes++;changeTaste(state,track,C.feedback.likeArtistSignal,C.feedback.likeGenreSignal)}
+    if(event==='unlike'){state.likes=(state.likes||[]).filter(x=>idOf(x)!==id);stats.likes=Math.max(0,stats.likes-1);changeTaste(state,track,-C.feedback.likeArtistSignal,-C.feedback.likeGenreSignal)}
+    if(event==='dislike'){state.dislikes||=[];if(!state.dislikes.includes(id))state.dislikes.push(id);stats.dislikes++}
   }
   function tasteCompatibility(track,state,selectedGenres=[]){
     let genre=state.taste?.genres?.[track.genre]||0,artist=state.taste?.artists?.[track.artist]||0,liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));
@@ -70,17 +73,19 @@
     let recent=session.previousTracks.slice(-C.historyWindow),id=idOf(track),sameIndex=[...recent].reverse().findIndex(x=>String(x.id)===id),artistCount=recent.slice(-6).filter(x=>x.artist===track.artist).length,album=track.album||track.albumName,albumCount=album?recent.slice(-8).filter(x=>x.album===album).length:0;
     let repeat=sameIndex===0?C.penalties.sameTrack:sameIndex>0&&sameIndex<C.recentTrackBlock?C.penalties.recentTrack*(1-sameIndex/C.recentTrackBlock):0;
     let artist=(recent.at(-1)?.artist===track.artist?C.penalties.sameArtist:0)+Math.max(0,artistCount-1)*C.penalties.recentArtist;
-    let stats=state.trackStats?.[id]||{},explicitDislike=(state.dislikes||[]).includes(id),skip=clamp((stats.skips||0)*C.penalties.skip,0,.75)+((stats.dislikes||explicitDislike)?C.penalties.dislike:0),albumPenalty=albumCount*C.penalties.sameAlbum;
+    let stats=state.trackStats?.[id]||{},explicitDislike=(state.dislikes||[]).includes(id),skip=clamp((stats.skips||0)*C.penalties.skip,0,.75)+((stats.dislikes||explicitDislike)?C.feedback.dislikeTrackPenalty:0),albumPenalty=albumCount*C.penalties.sameAlbum;
     return {repeatPenalty:repeat,artistRepeatPenalty:artist,skipPenalty:skip,albumPenalty};
   }
   function selectionType(track,state,selectedGenres){let stats=state.trackStats?.[idOf(track)],liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));if(liked||stats?.plays>0)return'FAMILIAR';return tasteCompatibility(track,state,selectedGenres)>=.63?'DISCOVERY':'EXPERIMENT'}
   function mixWeight(type,n){let key=type.toLowerCase(),range=C.mix[key];return lerp(range.start,range.end,n)}
+  function weightedFactor(score,weight,neutral=1){return Math.max(.08,1+(score-neutral)*weight)}
   function scoreTrack(track,context){
     let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),mood=moodScore(track,session.currentMood),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),p=penalties(track,session,state);
-    let noveltyScore=(1-n)*(1-userNovelty)+n*(.82*userNovelty+.18*releaseNovelty),noveltyFactor=.55+.9*noveltyScore,discoveryScore=mixWeight(type,n);
-    let positive=preference*similarity*mood*noveltyFactor*(.45+discoveryScore)*diversityScore;
+    let noveltyScore=(1-n)*(1-userNovelty)+n*userNovelty,releaseFit=(1-n)*.5+n*releaseNovelty,discoveryScore=mixWeight(type,n),w=C.weights;
+    let applied={preferenceWeight:w.preference,similarityWeight:w.similarity,moodWeight:w.mood,userNoveltyWeight:w.userNovelty,releaseNoveltyWeight:w.releaseNovelty,diversityWeight:w.diversity};
+    let positive=weightedFactor(preference,w.preference)*weightedFactor(similarity,w.similarity)*weightedFactor(mood,w.mood)*weightedFactor(noveltyScore,w.userNovelty,.5)*weightedFactor(releaseFit,w.releaseNovelty,.5)*weightedFactor(diversityScore,w.diversity)*(.45+discoveryScore);
     let finalScore=positive-p.repeatPenalty-p.artistRepeatPenalty-p.skipPenalty-p.albumPenalty;
-    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
+    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
   }
   function getNextTrack(catalog,context,random=Math.random){
     let scored=catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore),pool=scored.slice(0,Math.min(C.candidateTopK,scored.length));if(!pool.length)return null;

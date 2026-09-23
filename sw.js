@@ -1,4 +1,4 @@
-const CACHE='wave-shell-v5';
+const CACHE='wave-shell-v6';
 const SHELL=['./','./index.html','./styles.css','./recommendation-config.js','./recommendation-engine.js','./app.js','./manifest.webmanifest','./wave-icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));

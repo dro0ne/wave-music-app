@@ -9,7 +9,8 @@ window.WAVE_RECOMMENDATION_CONFIG={
     experiment:{start:.05,end:.25}
   },
   weights:{preference:.25,similarity:.18,mood:.22,userNovelty:.22,releaseNovelty:.05,diversity:.08},
-  penalties:{sameTrack:1.25,recentTrack:.72,sameArtist:.34,recentArtist:.16,sameAlbum:.18,genreStreak:.12,skip:.22,dislike:.75},
+  penalties:{sameTrack:1.25,recentTrack:.72,sameArtist:.34,recentArtist:.16,sameAlbum:.18,genreStreak:.12,skip:.22},
+  feedback:{dislikeTrackPenalty:1.35,dislikeArtistSignal:-.70,dislikeGenreSignal:-.12,likeArtistSignal:1.60,likeGenreSignal:.55},
   moodProfiles:{
     'Спокойствие':{aliases:['peaceful','chill','calm','relaxing','easygoing','tender'],energy:.22,valence:.58,bpm:72,genres:['ambient','lo-fi','acoustic','classical','jazz','downtempo','chill']},
     'Энергия':{aliases:['energizing','fiery','empowering','upbeat','energetic'],energy:.90,valence:.72,bpm:132,genres:['dance','electronic','rock','hip-hop','workout','drum & bass']},
