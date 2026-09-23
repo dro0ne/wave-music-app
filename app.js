@@ -1,3 +1,7 @@
+const WAVE_BUILD='84fd6f0-fixed-deploy';
+window.WAVE_BUILD=WAVE_BUILD;
+document.documentElement.dataset.build=WAVE_BUILD;
+console.info('WAVE BUILD:',WAVE_BUILD);
 const MOODS=[['Спокойствие','☁',64,'#7056db'],['Энергия','ϟ',124,'#e8643e'],['Фокус','◎',82,'#318d91'],['Мечтательно','☾',70,'#8b57d8'],['Вечеринка','✦',132,'#d64c9b']];
 const GENRE_PAIRS=[
 ['Поп','Pop'],['Дэнс-поп','Dance Pop'],['Синти-поп','Synthpop'],['Инди-поп','Indie Pop'],['Дрим-поп','Dream Pop'],['Арт-поп','Art Pop'],['K-pop','K-Pop'],['J-pop','J-Pop'],['Гиперпоп','Hyperpop'],['Европоп','Europop'],
