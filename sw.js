@@ -1,5 +1,5 @@
-const CACHE='wave-shell-v6';
-const SHELL=['./','./index.html','./styles.css','./recommendation-config.js','./recommendation-engine.js','./app.js','./manifest.webmanifest','./wave-icon.svg'];
+const CACHE='wave-shell-v7';
+const SHELL=['./','./index.html','./styles.css?v=7','./recommendation-config.js?v=3','./recommendation-engine.js?v=3','./app.js?v=12','./manifest.webmanifest?v=3','./wave-icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET'||new URL(event.request.url).origin!==location.origin)return;event.respondWith(fetch(event.request).then(response=>{let copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}).catch(()=>caches.match(event.request)))})

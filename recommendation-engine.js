@@ -14,8 +14,8 @@
   function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{}};state.taste.genres||={};state.taste.artists||={};state.taste.genres[track.genre]=(state.taste.genres[track.genre]||0)+genreSignal;state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
   function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,20)}
   function recordEvent(state,session,track,event,details=0){
-    if(!track)return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
-    if(['ended','next','skip','dislike','error'].includes(event)){
+    if(!track||event==='error')return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
+    if(['ended','next','skip','dislike'].includes(event)){
       stats.plays++;stats.lastPlayedAt=now;stats.recentPlayDates=[now,...(stats.recentPlayDates||[]).filter(x=>daysSince(x)<7)].slice(0,20);
       if(event==='ended'||ratio>=.85)stats.completed++;
       if(event!=='error'&&(event==='dislike'||ratio<.15))stats.skips+=2;else if(event!=='error'&&ratio<.5)stats.skips+=1;
