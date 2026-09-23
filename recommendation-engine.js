@@ -87,11 +87,14 @@
     let finalScore=positive-p.repeatPenalty-p.artistRepeatPenalty-p.skipPenalty-p.albumPenalty;
     return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
   }
+  function getRankedCandidates(catalog,context,limit=15){
+    return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
+  }
   function getNextTrack(catalog,context,random=Math.random){
-    let scored=catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore),pool=scored.slice(0,Math.min(C.candidateTopK,scored.length));if(!pool.length)return null;
+    let pool=getRankedCandidates(catalog,context,C.candidateTopK);if(!pool.length)return null;
     let floor=pool.at(-1).finalScore,weights=pool.map(x=>Math.exp((x.finalScore-floor)/C.temperature)),pick=random()*weights.reduce((a,b)=>a+b,0),chosen=pool[0];for(let i=0;i<pool.length;i++){pick-=weights[i];if(pick<=0){chosen=pool[i];break}}
     context.session.currentTrackId=idOf(chosen.track);if(!context.session.seedTrackId)context.session.seedTrackId=context.session.currentTrackId;
     return chosen;
   }
-  global.WaveRecommendation={createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,getNextTrack,idOf};
+  global.WaveRecommendation={createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,getRankedCandidates,getNextTrack,idOf};
 })(window);
