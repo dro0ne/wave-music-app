@@ -6,4 +6,13 @@ test('reserved ids protect anti-repeat',()=>assert(source.includes('reservedIds.
 test('media events drive player state',()=>['onplay','onplaying','onpause','onwaiting','onstalled','oncanplay','onended','onerror'].forEach(event=>assert(source.includes(event),`${event} missing`)));
 test('ready next path reports latency',()=>assert(source.includes('PRELOAD_SWAP')&&source.includes('NEXT_LATENCY_MS'),'swap metrics missing'));
 test('failed next has backup',()=>assert(source.includes('playbackBuffer.backupNext')&&source.includes("next('error',true)"),'backup error path missing'));
+test('wave button resumes instead of rebuilding wave',()=>assert(source.includes("current()?play():start()"),'paused wave button restarts selection'));
+test('button states are media-event driven',()=>['IDLE','LOADING','PLAYING','PAUSED','ERROR','PLAYER_BUTTON_STATE'].forEach(value=>assert(source.includes(value),`${value} missing`)));
+test('crossfade setting persists in wave state',()=>assert(source.includes('state.crossfadeEnabled')&&source.includes('state.crossfadeDuration')&&source.includes('save();renderCrossfadeSetting()'),'crossfade persistence missing'));
+test('crossfade uses animation frames and guards duplicates',()=>assert(source.includes('requestAnimationFrame(step)')&&source.includes('crossfadeInProgress')&&source.includes('if(selectionInProgress||crossfadeInProgress)return'),'crossfade animation or lock missing'));
+test('manual next and dislike durations are capped',()=>assert(source.includes("event==='dislike'||event==='skip'")&&source.includes('Math.min(state.crossfadeDuration,2)'),'transition caps missing'));
+test('crossfade requires preload readiness',()=>assert(source.includes('!preloadReady')&&source.includes("newMedia.dataset.trackId!==String(chosen.id)"),'preload crossfade guard missing'));
+test('crossfade stops and resets old audio',()=>assert(source.includes('oldMedia.pause()')&&source.includes('oldMedia.currentTime=0'),'old audio cleanup missing'));
+let cssRequest=new XMLHttpRequest();cssRequest.open('GET','../styles.css',false);cssRequest.send();let css=cssRequest.responseText;
+test('orb hover preserves geometry and has smooth transitions',()=>{let hover=css.match(/\.wave-orb:hover\{([^}]*)\}/)?.[1]||'';assert(hover.includes('transform:scale(1.02)')&&!/(?:width|height|border-width)\s*:/.test(hover)&&css.includes('transition:transform 180ms ease'),'hover geometry changes')});
 let failed=results.filter(x=>x.startsWith('FAIL')).length;document.querySelector('#results').textContent=`${failed?'FAILED':'PASSED'}\n${results.join('\n')}`;document.body.dataset.failed=String(failed);
