@@ -32,8 +32,8 @@
   }
   function tasteCompatibility(track,state,selectedGenres=[]){
     let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre,genre=state.taste?.genres?.[family]||state.taste?.genres?.[track.genre]||0,subgenre=(track.subgenres||[]).reduce((sum,x)=>sum+(state.taste?.subgenres?.[x]||0),0),artist=state.taste?.artists?.[track.artist]||0,liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));
-    let selected=selectedGenres.some(g=>global.WaveGenre?.matchesSelection(track,g)||lower(track.genre).includes(lower(g))||lower(g).includes(lower(track.genre)));
-    return clamp(.58+genre*.04+subgenre*.06+artist*.065+(liked?.22:0)+(selected?.20*(track.genreConfidence??1):0),.18,1.35);
+    let selectedScore=selectedGenres.length?Math.max(...selectedGenres.map(g=>global.WaveGenre?.match?.(track,g)?.score??(global.WaveGenre?.matchesSelection(track,g)?1:0))):0,genreIntent=selectedGenres.length?selectedScore*.28-(selectedScore===0?.24:0):0;
+    return clamp(.58+genre*.04+subgenre*.06+artist*.065+(liked?.22:0)+genreIntent,.18,1.35);
   }
   function preferenceScore(track,state,selectedGenres){return tasteCompatibility(track,state,selectedGenres)}
   function similarityScore(track,session,state){
