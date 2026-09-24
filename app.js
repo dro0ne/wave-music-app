@@ -1,4 +1,4 @@
-const WAVE_BUILD='search-crossfade-20260924';
+const WAVE_BUILD='genre-mood-intelligence-20260924';
 window.WAVE_BUILD=WAVE_BUILD;
 document.documentElement.dataset.build=WAVE_BUILD;
 console.info('WAVE BUILD:',WAVE_BUILD);
@@ -24,6 +24,8 @@ const ARTISTS=['Luma','Northline','Mira Vee','Slow Frames','Nova Room','Aster','
 let state=JSON.parse(localStorage.getItem('waveState')||'null')||{mood:'Спокойствие',genres:['Поп','Электроника'],discovery:50,likes:[],history:[]};
 state.likes ||= []; state.history ||= []; state.dislikes ||= []; state.taste ||= {genres:{},artists:{}};state.trackStats||={};
 state.crossfadeEnabled ??= true;state.crossfadeDuration=Number.isFinite(+state.crossfadeDuration)?Math.max(0,Math.min(10,+state.crossfadeDuration)):5;
+state.genreUsageCount||={};state.recentGenreSelections||=[];state.taste.subgenres||={};
+if(!state.genreTasteMigrated){let migrated={};Object.entries(state.taste.genres||{}).forEach(([genre,value])=>{let family=WaveGenre.normalizeGenre(genre).normalizedGenre;migrated[family]=(migrated[family]||0)+value});state.taste.genres={...state.taste.genres,...migrated};state.genreTasteMigrated=true}
 let waveSession=WaveRecommendation.createSession(state.waveSession||{currentMood:state.mood,noveltyLevel:state.discovery/100});
 let queue=[],index=0,catalog=[],catalogLoadedAt=0,playing=false,elapsed=0,timer,audio,media,playbackRetryCount=0,playbackStoppedOnError=false,playedSinceCatalogRefresh=0,catalogRefreshInFlight=false;
 let failedTrackIds=new Set();
@@ -45,14 +47,14 @@ document.querySelectorAll('input[type="range"]').forEach(input=>{paintRange(inpu
 function choices(){
   let genreScroll=$('#genres')?.scrollTop||0;
   $('#moods').innerHTML=MOODS.map(m=>`<button class="mood ${state.mood===m[0]?'selected':''}" data-mood="${m[0]}" aria-pressed="${state.mood===m[0]}"><b>${m[1]}</b><span>${m[0]}</span></button>`).join('');
-  let visible=GENRES.filter(g=>g.toLocaleLowerCase('ru').includes(genreQuery));
+  let visible=GENRES.filter(g=>g.toLocaleLowerCase('ru').includes(genreQuery)).sort((a,b)=>Number(state.genres.includes(b))-Number(state.genres.includes(a))||(state.recentGenreSelections.indexOf(a)<0?999:state.recentGenreSelections.indexOf(a))-(state.recentGenreSelections.indexOf(b)<0?999:state.recentGenreSelections.indexOf(b))||(state.genreUsageCount[b]||0)-(state.genreUsageCount[a]||0));
   $('#genres').innerHTML=visible.length?visible.map(g=>`<button class="genre ${state.genres.includes(g)?'selected':''}" data-genre="${g}" aria-pressed="${state.genres.includes(g)}">${g}</button>`).join(''):'<span class="genre-empty">Такого жанра пока нет</span>';
   $('#genreCount').textContent=genreQuery?`найдено: ${visible.length}`:`выбирай несколько · ${GENRES.length} направлений`;
   $('#genres').scrollTop=genreScroll;
   $('#hint').textContent=`${state.mood} · ${state.genres.join(', ')||'Любые жанры'}`;
 }
 $('#moods').onclick=e=>{let b=e.target.closest('[data-mood]');if(b&&state.mood!==b.dataset.mood){state.mood=b.dataset.mood;WaveRecommendation.updateWavePreferences(waveSession,{mood:state.mood});save();choices();invalidateNextBuffer('mood');void loadCatalog(true);toast('Настроение обновлено — повлияет на следующий трек')}};
-$('#genres').onclick=e=>{let b=e.target.closest('[data-genre]');if(!b)return;let g=b.dataset.genre;state.genres=state.genres.includes(g)?state.genres.filter(x=>x!==g):[...state.genres,g];save();choices();void loadCatalog(true);toast('Жанры обновлены — повлияют на следующий трек')};
+$('#genres').onclick=e=>{let b=e.target.closest('[data-genre]');if(!b)return;let g=b.dataset.genre,adding=!state.genres.includes(g);state.genres=adding?[...state.genres,g]:state.genres.filter(x=>x!==g);if(adding){state.genreUsageCount[g]=(state.genreUsageCount[g]||0)+1;state.recentGenreSelections=[g,...state.recentGenreSelections.filter(x=>x!==g)].slice(0,20)}save();choices();void loadCatalog(true);toast('Жанры обновлены — повлияют на следующий трек')};
 $('#genreSearch').oninput=e=>{genreQuery=e.target.value.trim().toLocaleLowerCase('ru');choices()};
 function renderMusicResults(message=''){
   let box=$('#musicResults');
@@ -93,8 +95,8 @@ async function loadCatalog(force=false,merge=false,quiet=false){
   if(catalog.length&&!force&&Date.now()-catalogLoadedAt<15*60*1000)return catalog;
   let m=MOODS.find(x=>x[0]===state.mood)||MOODS[0];
   try{
-    let genres=state.genres.slice(0,8).map(label=>genreMap[label]||label),source=await sourceManager.getCatalog({genres}),combined=[...(merge?catalog:[]),...state.likes,...source].map(t=>normalize(t,m));
-    catalog=sourceManager.deduplicate(combined);if(!catalog.length)throw Error('Каталог временно недоступен');catalogLoadedAt=Date.now();
+    let genres=state.genres.slice(0,8).map(label=>genreMap[label]||label),source=await sourceManager.getCatalog({genres}),combined=[...(merge?catalog:[]),...state.likes,...source].map(t=>normalize(t,m)),matched=combined.filter(t=>genres.some(g=>WaveGenre.matchesSelection(t,g))&&(t.genreConfidence??0)>=.5),pool=matched.length>=15?[...state.likes,...matched]:combined;
+    catalog=sourceManager.deduplicate(pool);if(!catalog.length)throw Error('Каталог временно недоступен');catalogLoadedAt=Date.now();
   }catch(error){if(merge&&catalog.length)return catalog;catalog=fallbackQueue().map(t=>normalize(t,m));catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
   return catalog;
 }
@@ -105,7 +107,7 @@ function maybeReplenishCatalog(event,listenedSeconds){
   if(playedSinceCatalogRefresh<12&&available>=15)return;
   playedSinceCatalogRefresh=0;catalogRefreshInFlight=true;void loadCatalog(true,true,true).finally(()=>{catalogRefreshInFlight=false});
 }
-function recommendationContext(){return {state,session:waveSession,selectedGenres:state.genres}}
+function recommendationContext(){return {state,session:waveSession,selectedGenres:state.genres.map(label=>genreMap[label]||label)}}
 function chooseNextTrack(pool=catalog){
   let selected=WaveRecommendation.getNextTrack(pool,recommendationContext());if(!selected)return null;
   let t={...selected.track,reason:`${selected.selectionType} · настроение ${selected.moodScore.toFixed(2)} · новизна ${selected.userNoveltyScore.toFixed(2)}`};
@@ -165,6 +167,9 @@ function invalidateNextBuffer(reason='manual'){preloadRequestId++;playbackBuffer
 function preloadTrack(track,requestId){cancelPreloadAudio();if(!track?.stream)return;let element=new Audio(),isIOS=/iP(?:hone|ad|od)/.test(navigator.userAgent);preloadMedia=element;preloadReady=false;element.dataset.trackId=String(track.id);element.preload=isIOS?'metadata':'auto';element.volume=+$('#volume').value/100;console.log('PRELOAD_START',{trackId:track.id,title:track.title,source:track.activeSource||track.source,bufferPosition:'next'});let ready=()=>{if(requestId!==preloadRequestId||preloadMedia!==element)return;preloadReady=true;console.log('PRELOAD_READY',{trackId:track.id,title:track.title,source:track.activeSource||track.source,readyState:element.readyState,bufferPosition:'next'})};element.oncanplay=ready;element.onloadedmetadata=()=>{if(isIOS)ready()};element.onerror=()=>{if(requestId!==preloadRequestId)return;console.warn('PRELOAD_FAILED',{trackId:track.id,title:track.title,source:track.activeSource||track.source});preloadReady=false};element.src=track.stream;element.load()}
 async function fillPlaybackBuffer(){if(bufferFillPromise)return bufferFillPromise;let requestId=++preloadRequestId;bufferFillPromise=(async()=>{let reserved=new Set([current(),playbackBuffer.next,playbackBuffer.backupNext].filter(Boolean).map(WaveRecommendation.idOf));try{if(!playbackBuffer.next){console.log('PRELOAD_SELECT',{bufferPosition:'next',requestId});let nextTrack=await choosePlayableTrack(reserved);if(requestId!==preloadRequestId)return;if(nextTrack){playbackBuffer.next=nextTrack;reserved.add(WaveRecommendation.idOf(nextTrack));preloadTrack(nextTrack,requestId)}}else if(!preloadMedia)preloadTrack(playbackBuffer.next,requestId);if(!playbackBuffer.backupNext){console.log('PRELOAD_SELECT',{bufferPosition:'backupNext',requestId});let backup=await choosePlayableTrack(reserved);if(requestId!==preloadRequestId)return;if(backup)playbackBuffer.backupNext=backup}}finally{bufferFillPromise=null;if(requestId!==preloadRequestId&&current())queueMicrotask(()=>fillPlaybackBuffer())}})();return bufferFillPromise}
 window.wavePlayerDebug=()=>({current:current(),next:playbackBuffer.next,backup:playbackBuffer.backupNext,currentSource:current()?.activeSource||current()?.source,playerState,audioReadyState:media?.readyState??null,audioNetworkState:media?.networkState??null,preloadReadyState:preloadMedia?.readyState??null,preloadReady,sources:sourceManager.debug()});
+window.waveGenreDebug=track=>{let t=track||current();return t?{title:t.title,artist:t.artist,source:t.source,rawGenre:t.rawGenre,normalizedGenre:t.normalizedGenre,subgenres:t.subgenres,genreConfidence:t.genreConfidence}:null};
+window.waveMoodDebug=track=>{let t=track||current();if(!t)return null;let result=WaveMood.score(t,state.mood,state);return {...window.waveGenreDebug(t),mood:state.mood,moodScore:result.score,moodConfidence:result.confidence,moodReasons:result.reasons,bpm:t.bpm,energy:t.energy,valence:t.valence,danceability:t.danceability}};
+window.waveMoodSessionDebug=()=>({selectedMood:state.mood,genreAffinities:state.moodIntent?.[state.mood]?.genres||{},subgenreAffinities:state.moodIntent?.[state.mood]?.subgenres||{},skipStreak:state.moodSkipStreak||null,recentSignals:state.moodIntent?.[state.mood]?.signals||[],direction:WaveMood.directions[state.mood]});
 function crossfadeSeconds(event){if(!state.crossfadeEnabled||state.crossfadeDuration<=0)return 0;if(event==='dislike'||event==='skip')return .5;if(event==='next'||event==='error')return Math.min(state.crossfadeDuration,2);return state.crossfadeDuration}
 function animateCrossfade(oldMedia,newMedia,seconds,targetVolume){return new Promise(resolve=>{let duration=Math.max(0,seconds*1000),started=performance.now(),lastProgress=-1;cancelAnimationFrame(crossfadeFrame);console.log('CROSSFADE_START',{duration:seconds,from:oldMedia?.dataset.trackId,to:newMedia?.dataset.trackId});let step=now=>{let ratio=duration?Math.min(1,(now-started)/duration):1,eased=ratio*ratio*(3-2*ratio);if(oldMedia)oldMedia.volume=Math.max(0,targetVolume*(1-eased));if(newMedia)newMedia.volume=Math.min(1,targetVolume*eased);let quarter=Math.floor(ratio*4);if(quarter!==lastProgress){lastProgress=quarter;console.log('CROSSFADE_PROGRESS',{progress:+ratio.toFixed(2),currentVolume:oldMedia?.volume??0,nextVolume:newMedia?.volume??0})}if(ratio<1){crossfadeFrame=requestAnimationFrame(step);return}if(oldMedia){oldMedia.pause();try{oldMedia.currentTime=0}catch{}oldMedia.removeAttribute('src');oldMedia.load()}console.log('CROSSFADE_END',{duration:seconds});resolve()};crossfadeFrame=requestAnimationFrame(step)})}
 function commitNextTrack(chosen){queue=queue.slice(0,index+1);queue.push(chosen);index=queue.length-1;load()}

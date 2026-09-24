@@ -11,7 +11,7 @@
   }
   function updateWavePreferences(session,patch){if(patch.mood!==undefined)session.currentMood=patch.mood;if(patch.noveltyLevel!==undefined)session.noveltyLevel=clamp(Number(patch.noveltyLevel));return session}
   function ensureStats(state,id){state.trackStats||={};return state.trackStats[id]||={plays:0,completed:0,skips:0,likes:0,dislikes:0,lastPlayedAt:null,recentPlayDates:[]}}
-  function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{}};state.taste.genres||={};state.taste.artists||={};state.taste.genres[track.genre]=(state.taste.genres[track.genre]||0)+genreSignal;state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
+  function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{},subgenres:{}};state.taste.genres||={};state.taste.subgenres||={};state.taste.artists||={};let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre;state.taste.genres[family]=(state.taste.genres[family]||0)+genreSignal;(track.subgenres||[]).forEach(x=>state.taste.subgenres[x]=(state.taste.subgenres[x]||0)+genreSignal*1.6);state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
   function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,20)}
   function recordEvent(state,session,track,event,details=0){
     if(!track||event==='error')return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
@@ -23,17 +23,17 @@
         if(event==='dislike')changeTaste(state,track,C.feedback.dislikeArtistSignal,C.feedback.dislikeGenreSignal);
         else {let signal=ratio<.15?-1:ratio<.5?-.35:ratio<.85?.15:1;changeTaste(state,track,signal*.65,signal*.22)}
       }
-      session.previousTracks.push({id,title:track.title,artist:track.artist,album:track.album||track.albumName||'',genre:track.genre,playedAt:now,progressRatio:ratio,event});session.previousTracks=session.previousTracks.slice(-C.historyWindow);
+      global.WaveMood?.record(state,session.currentMood,track,event,ratio);session.previousTracks.push({id,title:track.title,artist:track.artist,album:track.album||track.albumName||'',genre:track.genre,normalizedGenre:track.normalizedGenre,subgenres:track.subgenres,playedAt:now,progressRatio:ratio,event});session.previousTracks=session.previousTracks.slice(-C.historyWindow);
       if(event!=='error'&&listenedSeconds>0)addToHistory(state,track);
     }
-    if(event==='like'){state.likes||=[];if(!state.likes.some(x=>idOf(x)===id))state.likes=[track,...state.likes];stats.likes++;changeTaste(state,track,C.feedback.likeArtistSignal,C.feedback.likeGenreSignal)}
+    if(event==='like'){state.likes||=[];if(!state.likes.some(x=>idOf(x)===id))state.likes=[track,...state.likes];stats.likes++;changeTaste(state,track,C.feedback.likeArtistSignal,C.feedback.likeGenreSignal);global.WaveMood?.record(state,session.currentMood,track,event,1)}
     if(event==='unlike'){state.likes=(state.likes||[]).filter(x=>idOf(x)!==id);stats.likes=Math.max(0,stats.likes-1);changeTaste(state,track,-C.feedback.likeArtistSignal,-C.feedback.likeGenreSignal)}
     if(event==='dislike'){state.dislikes||=[];if(!state.dislikes.includes(id))state.dislikes.push(id);stats.dislikes++}
   }
   function tasteCompatibility(track,state,selectedGenres=[]){
-    let genre=state.taste?.genres?.[track.genre]||0,artist=state.taste?.artists?.[track.artist]||0,liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));
-    let selected=selectedGenres.some(g=>lower(track.genre).includes(lower(g))||lower(g).includes(lower(track.genre)));
-    return clamp(.58+genre*.055+artist*.065+(liked?.22:0)+(selected?.20:0),.18,1.35);
+    let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre,genre=state.taste?.genres?.[family]||state.taste?.genres?.[track.genre]||0,subgenre=(track.subgenres||[]).reduce((sum,x)=>sum+(state.taste?.subgenres?.[x]||0),0),artist=state.taste?.artists?.[track.artist]||0,liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));
+    let selected=selectedGenres.some(g=>global.WaveGenre?.matchesSelection(track,g)||lower(track.genre).includes(lower(g))||lower(g).includes(lower(track.genre)));
+    return clamp(.58+genre*.04+subgenre*.06+artist*.065+(liked?.22:0)+(selected?.20*(track.genreConfidence??1):0),.18,1.35);
   }
   function preferenceScore(track,state,selectedGenres){return tasteCompatibility(track,state,selectedGenres)}
   function similarityScore(track,session,state){
@@ -49,7 +49,8 @@
     if(!Number.isFinite(valence))valence=/happy|party|upbeat|disco|pop/.test(text)?.82:/dark|sad|melanch|doom|death/.test(text)?.22:.55;
     return {text,bpm,energy,valence};
   }
-  function moodScore(track,currentMood){
+  function moodScore(track,currentMood,state={}){
+    if(global.WaveMood)return global.WaveMood.score(track,currentMood,state).score;
     let profile=C.moodProfiles[currentMood]||C.moodProfiles['Спокойствие'],f=estimatedFeatures(track),score=.62;
     if(profile.aliases.some(x=>f.text.includes(x)))score+=.48;
     if(profile.genres.some(x=>f.text.includes(x)))score+=.28;
@@ -80,12 +81,12 @@
   function mixWeight(type,n){let key=type.toLowerCase(),range=C.mix[key];return lerp(range.start,range.end,n)}
   function weightedFactor(score,weight,neutral=1){return Math.max(.08,1+(score-neutral)*weight)}
   function scoreTrack(track,context){
-    let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),mood=moodScore(track,session.currentMood),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),p=penalties(track,session,state);
+    let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),moodDetail=global.WaveMood?.score(track,session.currentMood,state),mood=moodDetail?.score??moodScore(track,session.currentMood,state),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),p=penalties(track,session,state);
     let noveltyScore=(1-n)*(1-userNovelty)+n*userNovelty,releaseFit=(1-n)*.5+n*releaseNovelty,discoveryScore=mixWeight(type,n),w=C.weights;
     let applied={preferenceWeight:w.preference,similarityWeight:w.similarity,moodWeight:w.mood,userNoveltyWeight:w.userNovelty,releaseNoveltyWeight:w.releaseNovelty,diversityWeight:w.diversity};
     let positive=weightedFactor(preference,w.preference)*weightedFactor(similarity,w.similarity)*weightedFactor(mood,w.mood)*weightedFactor(noveltyScore,w.userNovelty,.5)*weightedFactor(releaseFit,w.releaseNovelty,.5)*weightedFactor(diversityScore,w.diversity)*(.45+discoveryScore);
     let finalScore=positive-p.repeatPenalty-p.artistRepeatPenalty-p.skipPenalty-p.albumPenalty;
-    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
+    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,moodConfidence:moodDetail?.confidence??null,moodReasons:moodDetail?.reasons??null,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
   }
   function getRankedCandidates(catalog,context,limit=15){
     return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
