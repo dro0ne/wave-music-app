@@ -1,7 +1,7 @@
 {
   "name": "Волна — музыка под настроение",
   "short_name": "Волна",
-  "description": "Персональная музыкальная волна",
+  "description": "Персональная музыкальная волна под настроение",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0b0b11",
