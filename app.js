@@ -1,4 +1,4 @@
-const WAVE_BUILD='ui-mobile-player-v1-20260925';
+const WAVE_BUILD='post-redesign-fixes-v1-20260925';
 window.WAVE_BUILD=WAVE_BUILD;
 document.documentElement.dataset.build=WAVE_BUILD;
 console.info('WAVE BUILD:',WAVE_BUILD);

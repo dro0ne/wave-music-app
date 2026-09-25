@@ -5,6 +5,7 @@ document.querySelector('#app').addEventListener('load',()=>{
   const doc=document.querySelector('#app').contentDocument;
   const request=new XMLHttpRequest();request.open('GET','../app.js',false);request.send();const source=request.responseText;
   const cssRequest=new XMLHttpRequest();cssRequest.open('GET','../styles.css',false);cssRequest.send();const css=cssRequest.responseText;
+  const htmlRequest=new XMLHttpRequest();htmlRequest.open('GET','../index.html',false);htmlRequest.send();const html=htmlRequest.responseText;
   test('one primary wave CTA',()=>assert(doc.querySelectorAll('#waveOrb').length===1&&!doc.querySelector('#start'),'duplicate start CTA'));
   test('mobile navigation has five named destinations',()=>assert(doc.querySelectorAll('[data-mobile-target]').length===5,'mobile destinations missing'));
   test('mini and full player share player bindings',()=>assert(doc.querySelector('#miniPlayer [data-player-title]')&&doc.querySelector('#fullPlayer [data-player-title]')&&source.includes('function renderPlayerUI()'),'shared player renderer missing'));
@@ -15,5 +16,8 @@ document.querySelector('#app').addEventListener('load',()=>{
   test('safe areas and dynamic viewport are present',()=>assert(css.includes('env(safe-area-inset-bottom)')&&css.includes('env(safe-area-inset-top)')&&css.includes('100dvh'),'mobile viewport protections missing'));
   test('critical controls meet touch target baseline',()=>assert(css.includes('min-width:44px')&&css.includes('min-height:44px'),'44px touch baseline missing'));
   test('reduced motion and fine-pointer hover are present',()=>assert(css.includes('prefers-reduced-motion')&&css.includes('(hover:hover) and (pointer:fine)'),'motion or hover media query missing'));
+  test('hero CTA precedes search on the home screen',()=>assert(html.indexOf('class="hero"')<html.indexOf('id="searchSection"'),'search appears before primary wave CTA'));
+  test('mobile keeps the branded orb core interactive',()=>assert(css.includes('.orb-core{width:132px;height:132px;display:flex}')&&css.includes('.wave-orb{position:relative;right:auto;top:auto'),'mobile orb is still decorative'));
+  test('desktop mixer receives the larger control treatment',()=>assert(css.includes('--player-height:132px')&&css.includes('.control-buttons #play{width:66px;height:66px')&&css.includes('.volume{width:min(210px,90%)'),'desktop mixer sizing missing'));
   const failed=results.filter(x=>x.startsWith('FAIL')).length;document.querySelector('#results').textContent=`${failed?'FAILED':'PASSED'}\n${results.join('\n')}`;document.body.dataset.failed=String(failed);
 });
