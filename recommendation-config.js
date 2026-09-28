@@ -19,6 +19,7 @@ window.WAVE_RECOMMENDATION_CONFIG={
     'Энергия':{aliases:['energizing','fiery','empowering','upbeat','energetic'],energy:.90,valence:.72,bpm:132,genres:['dance','electronic','rock','hip-hop','workout','drum & bass']},
     'Фокус':{aliases:['focused','sophisticated','serious','focus'],energy:.38,valence:.52,bpm:88,genres:['ambient','lo-fi','classical','instrumental','piano','minimal']},
     'Мечтательно':{aliases:['dreamy','romantic','sentimental','yearning','tender'],energy:.32,valence:.62,bpm:78,genres:['dream pop','ambient','indie','shoegaze','chillwave','acoustic']},
+    'Романтика':{aliases:['romantic','tender','sentimental','love'],energy:.28,valence:.72,bpm:76,genres:['soul','r&b','jazz','acoustic','dream pop']},
     'Вечеринка':{aliases:['party','excited','upbeat','energizing','rowdy'],energy:.96,valence:.86,bpm:128,genres:['dance','edm','house','disco','pop','reggaeton','techno']}
   }
 };
