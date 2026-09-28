@@ -214,3 +214,16 @@ html{scroll-behavior:auto}
 
 /* Clip decorative and carousel bleed to the layout viewport; inner scrollers remain usable. */
 html{overflow-x:clip}
+
+/* iPhone Safari: keep fixed navigation clear of the home-indicator safe area. */
+@media(max-width:767px){
+  :root{--mobile-nav-height:calc(80px + env(safe-area-inset-bottom,0px))}
+  main{padding-bottom:calc(160px + env(safe-area-inset-bottom,0px))}
+  .mobile-nav{height:var(--mobile-nav-height);-webkit-backdrop-filter:blur(24px)}
+  .mini-player{-webkit-backdrop-filter:blur(22px)}
+  .full-player{min-height:100vh;min-height:100dvh}
+  .full-player-body{min-height:calc(100vh - 92px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));min-height:calc(100dvh - 92px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+  .bottom-sheet{max-height:min(78vh,680px);max-height:min(78dvh,680px)}
+  .search-sheet-open .music-search{bottom:var(--browser-bottom,0px)}
+  .search-sheet-open .music-results{max-height:calc(100vh - 170px - var(--browser-bottom,0px));max-height:calc(100dvh - 170px - var(--browser-bottom,0px))}
+}
