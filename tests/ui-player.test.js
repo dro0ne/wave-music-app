@@ -18,6 +18,6 @@ document.querySelector('#app').addEventListener('load',()=>{
   test('reduced motion and fine-pointer hover are present',()=>assert(css.includes('prefers-reduced-motion')&&css.includes('(hover:hover) and (pointer:fine)'),'motion or hover media query missing'));
   test('hero CTA precedes search on the home screen',()=>assert(html.indexOf('class="hero"')<html.indexOf('id="searchSection"'),'search appears before primary wave CTA'));
   test('mobile keeps the branded orb core interactive',()=>assert(css.includes('.orb-core{width:132px;height:132px;display:flex}')&&css.includes('.wave-orb{position:relative;right:auto;top:auto'),'mobile orb is still decorative'));
-  test('desktop mixer receives the larger control treatment',()=>assert(css.includes('--player-height:132px')&&css.includes('.control-buttons #play{width:66px;height:66px')&&css.includes('.volume{width:min(210px,90%)'),'desktop mixer sizing missing'));
+  test('desktop player reserves space for long progress and compact controls',()=>assert(css.includes('--player-height:104px')&&css.includes('.controls>label input{width:100%;flex:1;min-width:0}')&&css.includes('.volume input{width:150px'),'desktop player sizing missing'));
   const failed=results.filter(x=>x.startsWith('FAIL')).length;document.querySelector('#results').textContent=`${failed?'FAILED':'PASSED'}\n${results.join('\n')}`;document.body.dataset.failed=String(failed);
 });
