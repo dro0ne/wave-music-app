@@ -7,28 +7,33 @@
   const daysSince=value=>{let time=new Date(value||0).getTime();return time?Math.max(0,(Date.now()-time)/86400000):9999};
   const trackText=t=>lower([t.genre,t.mood,t.tags,t.title,t.artist].filter(Boolean).join(' '));
   function createSession(saved={}){
-    return {userId:saved.userId||'local-user',seedTrackId:saved.seedTrackId||null,currentMood:saved.currentMood||'Спокойствие',noveltyLevel:clamp(Number(saved.noveltyLevel??.5)),startedAt:saved.startedAt||new Date().toISOString(),currentTrackId:saved.currentTrackId||null,previousTracks:Array.isArray(saved.previousTracks)?saved.previousTracks.slice(-C.historyWindow):[]};
+    return {userId:saved.userId||'local-user',sessionId:saved.sessionId||null,finalizedPlaybackEvents:Array.isArray(saved.finalizedPlaybackEvents)?saved.finalizedPlaybackEvents.slice(-200):[],seedTrackId:saved.seedTrackId||null,currentMood:saved.currentMood||'Спокойствие',noveltyLevel:clamp(Number(saved.noveltyLevel??.5)),startedAt:saved.startedAt||new Date().toISOString(),currentTrackId:saved.currentTrackId||null,previousTracks:Array.isArray(saved.previousTracks)?saved.previousTracks.slice(-C.historyWindow):[]};
   }
   function updateWavePreferences(session,patch){if(patch.mood!==undefined)session.currentMood=patch.mood;if(patch.noveltyLevel!==undefined)session.noveltyLevel=clamp(Number(patch.noveltyLevel));return session}
   function ensureStats(state,id){state.trackStats||={};return state.trackStats[id]||={plays:0,completed:0,skips:0,likes:0,dislikes:0,lastPlayedAt:null,recentPlayDates:[]}}
   function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{},subgenres:{}};state.taste.genres||={};state.taste.subgenres||={};state.taste.artists||={};let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre;state.taste.genres[family]=(state.taste.genres[family]||0)+genreSignal;(track.subgenres||[]).forEach(x=>state.taste.subgenres[x]=(state.taste.subgenres[x]||0)+genreSignal*1.6);state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
-  function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,20)}
+  function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,C.historyWindow)}
   function recordEvent(state,session,track,event,details=0){
-    if(!track||event==='error')return;let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
-    if(['ended','next','skip','dislike'].includes(event)){
+    if(!track)return;
+    const managed=typeof details==='object'&&!!details.playbackEventId,terminal=['ended','next','skip','dislike','error','search'].includes(event);
+    if(managed&&terminal){session.finalizedPlaybackEvents||=[];if(session.finalizedPlaybackEvents.includes(details.playbackEventId))return;session.finalizedPlaybackEvents.push(details.playbackEventId);session.finalizedPlaybackEvents=session.finalizedPlaybackEvents.slice(-200)}
+    if(event==='error'&&!managed)return;
+    if(managed&&terminal&&!details.playingConfirmed&&event!=='dislike')return;
+    let id=idOf(track),stats=ensureStats(state,id),now=new Date().toISOString(),ratio=clamp(typeof details==='number'?details:details.progressRatio||0),listenedSeconds=Math.max(0,typeof details==='object'?(details.listenedSeconds||0):ratio*(Number(track.duration)||0));
+    if(terminal&&(!managed||details.playingConfirmed)){
       stats.plays++;stats.lastPlayedAt=now;stats.recentPlayDates=[now,...(stats.recentPlayDates||[]).filter(x=>daysSince(x)<7)].slice(0,20);
-      if(event==='ended'||ratio>=.85)stats.completed++;
+      if((!managed&&event==='ended')||ratio>=.85)stats.completed++;
       if(event!=='error'&&(event==='dislike'||ratio<.15))stats.skips+=2;else if(event!=='error'&&ratio<.5)stats.skips+=1;
       if(event!=='error'){
         if(event==='dislike')changeTaste(state,track,C.feedback.dislikeArtistSignal,C.feedback.dislikeGenreSignal);
         else {let signal=ratio<.15?-1:ratio<.5?-.35:ratio<.85?.15:1;changeTaste(state,track,signal*.65,signal*.22)}
       }
-      global.WaveMood?.record(state,session.currentMood,track,event,ratio);session.previousTracks.push({id,title:track.title,artist:track.artist,album:track.album||track.albumName||'',genre:track.genre,normalizedGenre:track.normalizedGenre,subgenres:track.subgenres,playedAt:now,progressRatio:ratio,event});session.previousTracks=session.previousTracks.slice(-C.historyWindow);
-      if(event!=='error'&&listenedSeconds>0)addToHistory(state,track);
+      if(event!=='error')global.WaveMood?.record(state,session.currentMood,track,event,ratio);session.previousTracks.push({id,source:track.source,sourceTrackId:track.sourceTrackId,recordingSourceKeys:global.WaveTrackModel?.sourceKeys(track)||[id],canonicalRecordingKey:track.canonicalRecordingKey||null,duration:track.duration,durationKnown:track.durationKnown,title:track.title,artist:track.artist,album:track.album||track.albumName||'',genre:track.genre,normalizedGenre:track.normalizedGenre,subgenres:track.subgenres,playedAt:now,progressRatio:ratio,listenedSeconds,playbackEventId:managed?details.playbackEventId:null,event});session.previousTracks=session.previousTracks.slice(-C.historyWindow);
+      if(listenedSeconds>0)addToHistory(state,track);
     }
     if(event==='like'){state.likes||=[];if(!state.likes.some(x=>idOf(x)===id))state.likes=[track,...state.likes];stats.likes++;changeTaste(state,track,C.feedback.likeArtistSignal,C.feedback.likeGenreSignal);global.WaveMood?.record(state,session.currentMood,track,event,1)}
     if(event==='unlike'){state.likes=(state.likes||[]).filter(x=>idOf(x)!==id);stats.likes=Math.max(0,stats.likes-1);changeTaste(state,track,-C.feedback.likeArtistSignal,-C.feedback.likeGenreSignal)}
-    if(event==='dislike'){state.dislikes||=[];if(!state.dislikes.includes(id))state.dislikes.push(id);stats.dislikes++}
+    if(event==='dislike'){state.dislikes||=[];if(!state.dislikes.includes(id))state.dislikes.push(id);stats.dislikes++;if(managed&&!details.playingConfirmed){changeTaste(state,track,C.feedback.dislikeArtistSignal,C.feedback.dislikeGenreSignal);global.WaveMood?.record(state,session.currentMood,track,event,0)}}
   }
   function tasteCompatibility(track,state,selectedGenres=[]){
     let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre,genre=state.taste?.genres?.[family]||state.taste?.genres?.[track.genre]||0,subgenre=(track.subgenres||[]).reduce((sum,x)=>sum+(state.taste?.subgenres?.[x]||0),0),artist=state.taste?.artists?.[track.artist]||0,liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));
@@ -91,7 +96,7 @@
   function getRankedCandidates(catalog,context,limit=15){
     return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
   }
-  function isRecentlyPlayed(track,session,windowSize=C.hardTrackBlock){let id=idOf(track);return session.previousTracks.slice(-windowSize).some(previous=>String(previous.id)===id)}
+  function isRecentlyPlayed(track,session,windowSize=C.hardTrackBlock){let id=idOf(track);return session.previousTracks.slice(-windowSize).some(previous=>(String(previous.id)===id||global.WaveTrackModel?.samePlaybackRecording(track,previous)))}
   function eligibleCandidates(catalog,session){
     let source=catalog.filter(Boolean),stages=[[C.hardTrackBlock,10],[C.hardTrackBlockRelaxed,5],[C.hardTrackBlockMinimum,1]];
     for(let [windowSize,minimum] of stages){let candidates=source.filter(track=>!isRecentlyPlayed(track,session,windowSize));if(candidates.length>=minimum)return {candidates,windowSize,hardBlockedCount:source.length-candidates.length}}
