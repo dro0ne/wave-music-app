@@ -1,4 +1,4 @@
-const WAVE_BUILD='playback-stage1-v1-20260929';
+const WAVE_BUILD='startup-stage2-v1-20260929';
 window.WAVE_BUILD=WAVE_BUILD;
 document.documentElement.dataset.build=WAVE_BUILD;
 console.info('WAVE BUILD:',WAVE_BUILD);
@@ -99,18 +99,26 @@ async function fetchArchiveTracks(query){
   let items=await Promise.all(docs.map(async doc=>{try{let meta=await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`,{signal:AbortSignal.timeout(9000)}).then(r=>r.json());let file=(meta.files||[]).find(f=>['VBR MP3','MP3'].includes(f.format)&&f.name&&!f.name.includes('_64kb'));if(!file)return null;return{id:`ia:${doc.identifier}`,title:doc.title||file.title||doc.identifier,artist:Array.isArray(doc.creator)?doc.creator[0]:doc.creator||'Internet Archive',genre:query||'Открытая музыка',duration:Math.round(+file.length)||180,artwork:`https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,stream:`https://archive.org/download/${encodeURIComponent(doc.identifier)}/${file.name.split('/').map(encodeURIComponent).join('/')}`,source:'Internet Archive',_reason:'Открытая лицензия · Internet Archive'}}catch{return null}}));
   return items.filter(Boolean)
 }
-async function loadCatalog(force=false,merge=false,quiet=false){
+let catalogTask=null,catalogRequest=0;
+async function loadCatalog(force=false,merge=false,quiet=false,firstBatch=false){
   if(catalog.length&&!force&&Date.now()-catalogLoadedAt<15*60*1000)return catalog;
-  let m=MOODS.find(x=>x[0]===state.mood)||MOODS[0],revision=playbackController.contextRevision;
-  try{
-    let genres=state.genres.slice(0,8).map(label=>genreMap[label]||label),source=await sourceManager.getCatalog({genres});if(revision!==playbackController.contextRevision){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}
-    let combined=sourceManager.deduplicate([...(merge?catalog:[]),...source].map(t=>normalize(t,m))),selection=WaveGenre.selectPool(combined,genres);
-    if(selection.tracks.length<12){let queries=[...new Set(genres.flatMap(g=>WaveGenre.queriesFor(g)))].slice(0,6),settled=await Promise.allSettled(queries.map(q=>sourceManager.searchTracks(q)));if(revision!==playbackController.contextRevision){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog-search'});return catalog}settled.forEach(result=>{if(result.status==='fulfilled')combined.push(...result.value.map(t=>normalize(t,m)))});combined=sourceManager.deduplicate(combined);selection=WaveGenre.selectPool(combined,genres)}
-    if(!selection.tracks.length)selection=WaveGenre.selectPool(combined,genres,{emergency:true});
-    console.info('GENRE_FALLBACK',{selected:genres,level:selection.level,fallback:selection.fallback,candidates:selection.tracks.length,total:combined.length});
-    catalog=sourceManager.deduplicate(selection.tracks);if(!catalog.length)throw Error('Каталог временно недоступен');catalogLoadedAt=Date.now();
-  }catch(error){if(revision!==playbackController.contextRevision||merge&&catalog.length)return catalog;catalog=fallbackQueue().map(t=>normalize(t,m));catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
-  return catalog;
+  const revision=playbackController.contextRevision;
+  if(catalogTask?.revision===revision)return firstBatch?catalogTask.initial:catalogTask.complete;
+  const request=++catalogRequest,m=MOODS.find(x=>x[0]===state.mood)||MOODS[0],genres=state.genres.slice(0,8).map(label=>genreMap[label]||label);
+  let firstResolve,combined=merge?catalog.slice():[],published=false;
+  const initial=new Promise(resolve=>firstResolve=resolve),valid=()=>revision===playbackController.contextRevision&&request===catalogRequest;
+  const publish=(tracks,emergency=false)=>{if(!valid())return;combined=sourceManager.deduplicate([...combined,...tracks.map(t=>normalize(t,m))]);const selection=WaveGenre.selectPool(combined,genres,{emergency});if(selection.tracks.length){catalog=sourceManager.deduplicate(selection.tracks);catalogLoadedAt=Date.now();if(!published){published=true;firstResolve(catalog)}}};
+  const complete=Promise.resolve().then(async()=>{
+    try{
+      const source=await sourceManager.getCatalog({genres,onBatch:tracks=>publish(tracks)});if(!valid()){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}publish(source);
+      if(catalog.length<12||!published){const queries=[...new Set(genres.flatMap(g=>WaveGenre.queriesFor(g)))].slice(0,6);const settled=await Promise.allSettled(queries.map(q=>sourceManager.searchTracks(q)));for(const result of settled)if(result.status==='fulfilled')publish(result.value)}
+      if(!published)publish([],true);
+      if(!published&&valid()){catalog=fallbackQueue().map(t=>normalize(t,m));catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
+      return catalog;
+    }catch(error){if(valid()&&!catalog.length){catalog=fallbackQueue().map(t=>normalize(t,m));if(!quiet)toast('Нет связи — включён локальный демо-режим')}return catalog}
+    finally{firstResolve(catalog);if(catalogTask?.request===request)catalogTask=null}
+  });
+  catalogTask={revision,request,initial,complete};return firstBatch?initial:complete;
 }
 function maybeReplenishCatalog(event,listenedSeconds){
   if(event==='error'||catalogRefreshInFlight)return;
@@ -133,16 +141,17 @@ async function resolveAudiusStream(trackId){
   if(typeof url!=='string'||!/^https:\/\//i.test(url))throw Error('Audius did not return a stream URL');
   return url;
 }
-async function probeStreamWithAudio(url){
-  return new Promise((resolve,reject)=>{let probe=new Audio(),done=false,timer=setTimeout(()=>finish(false,Error('audio probe timeout')),8000),finish=(ok,value)=>{if(done)return;done=true;clearTimeout(timer);probe.pause();probe.removeAttribute('src');probe.load();ok?resolve(value):reject(value)};probe.muted=true;probe.preload='metadata';probe.onloadedmetadata=()=>finish(true,{status:0,contentType:'audio/browser-probe',validation:'audio-probe',waveAnalysisAllowed:false});probe.oncanplay=()=>finish(true,{status:0,contentType:'audio/browser-probe',validation:'audio-probe',waveAnalysisAllowed:false});probe.onerror=()=>finish(false,Error(`media ${probe.error?.code||0}: ${probe.error?.message||'stream error'}`));probe.src=url;probe.load()})
+function validationRequest(parentSignal){const controller=new AbortController(),abort=()=>controller.abort(parentSignal?.reason),timer=setTimeout(()=>controller.abort(new DOMException('Stream validation timeout','TimeoutError')),8000);if(parentSignal?.aborted)abort();else parentSignal?.addEventListener('abort',abort,{once:true});return {signal:controller.signal,dispose(){clearTimeout(timer);parentSignal?.removeEventListener('abort',abort)}}}
+async function probeStreamWithAudio(url,signal){
+  return new Promise((resolve,reject)=>{let probe=new Audio(),done=false,timer=setTimeout(()=>finish(false,new DOMException('Audio probe timeout','TimeoutError')),8000);const abort=()=>finish(false,new DOMException('Validation cancelled','AbortError')),finish=(ok,value)=>{if(done)return;done=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);probe.onloadedmetadata=probe.oncanplay=probe.onerror=null;probe.pause();probe.removeAttribute('src');probe.load();ok?resolve(value):reject(value)};if(signal?.aborted){abort();return}signal?.addEventListener('abort',abort,{once:true});probe.muted=true;probe.preload='metadata';probe.onloadedmetadata=probe.oncanplay=()=>finish(true,{status:0,contentType:'audio/browser-probe',validation:'audio-probe',waveAnalysisAllowed:false});probe.onerror=()=>finish(false,Error(`media ${probe.error?.code||0}: stream error`));probe.src=url;probe.load()})
 }
-async function validateStreamUrl(url){
+async function validateStreamUrl(url,signal){
+  const request=validationRequest(signal);
   try{
-    let response=await fetch(url,{headers:{Range:'bytes=0-2047'},cache:'no-store',signal:AbortSignal.timeout(8000)}),contentType=(response.headers.get('content-type')||'').toLowerCase(),result={status:response.status,contentType,validation:'range-get',waveAnalysisAllowed:true};
-    if(response.body)void response.body.cancel();
-    if(![200,206].includes(response.status)||!contentType.startsWith('audio/'))throw Object.assign(Error(`stream HTTP ${response.status}, type ${contentType||'missing'}`),{httpResult:result});
-    return result;
-  }catch(error){if(error?.httpResult)throw error;return probeStreamWithAudio(url)}
+    const response=await fetch(url,{headers:{Range:'bytes=0-2047'},cache:'no-store',signal:request.signal}),contentType=(response.headers.get('content-type')||'').toLowerCase(),result={status:response.status,contentType,validation:'range-get',waveAnalysisAllowed:true};
+    if(response.body)void response.body.cancel().catch(()=>{});
+    if(![200,206].includes(response.status)||!contentType.startsWith('audio/'))throw Object.assign(Error('Stream response invalid'),{httpResult:result});return result;
+  }catch(error){if(signal?.aborted||request.signal.aborted||error?.httpResult)throw error;return probeStreamWithAudio(url,signal)}finally{request.dispose()}
 }
 async function validateAudiusStream(track,rank,score){
   let id=WaveRecommendation.idOf(track),url;
@@ -150,12 +159,13 @@ async function validateAudiusStream(track,rank,score){
   try{let result=await validateStreamUrl(url);console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:track.source,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);return {...track,stream:url}}
   catch(error){console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,error:error.message});failedTrackIds.add(id);return null}
 }
-async function validateCandidate(selected,rank,token=null){
+async function validateCandidate(selected,rank,token=null,signal=null){
+  startupMark('candidate_selected',selected.track);startupMark('stream_validation_start',selected.track);
   let track=selected.track,id=WaveRecommendation.idOf(track),cached=(verifiedPlayableTrackIds.get(id)||0)>Date.now();
   console.log('STREAM_VALIDATE_START',{trackId:id,title:track.title,rank,score:+selected.finalScore.toFixed(4)});
   if(track.source==='Local Demo')return track;
-  try{let resolved=await sourceManager.resolveTrack(track);if(token&&!tokenIsCurrent(token))return null;if(cached)return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)};let result=await validateStreamUrl(resolved.stream);if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);return resolved}
-  catch(error){if(token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});failedTrackIds.add(id);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
+  try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
+  catch(error){if(signal?.aborted||token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});failedTrackIds.add(id);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
 }
 function selectedTrack(selected,track){
   let t={...track,reason:`${selected.selectionType} · настроение ${selected.moodScore.toFixed(2)} · новизна ${selected.userNoveltyScore.toFixed(2)}`};
@@ -169,22 +179,41 @@ async function choosePlayableTrack(reservedIds=new Set(),token=selectionToken(),
   let context=recommendationContext(),ranked=WaveRecommendation.getRankedCandidates(candidates,context,WAVE_RECOMMENDATION_CONFIG.candidateTopK),weighted=WaveRecommendation.getWeightedCandidateOrder(candidates,context,WAVE_RECOMMENDATION_CONFIG.candidateTopK);
   window.__lastCandidateRanking=ranked.slice(0,10).map((x,i)=>({rank:i+1,trackId:WaveRecommendation.idOf(x.track),title:x.track.title,score:+x.finalScore.toFixed(4),source:x.track.source}));
   let validations=[];window.__lastStreamValidation=validations;
-  for(let i=0;i<Math.min(weighted.length,MAX_STREAM_VALIDATION_CANDIDATES);i++){
-    if(!tokenIsCurrent(token))return null;
-    let selected=weighted[i],reservationId=reserveCandidate(selected.track,token,allowRecent),handedOff=false;if(!reservationId)continue;
-    if(token.operation){if(token.operation.remainingCandidates<=0){releaseReservation(reservationId);break}token.operation.remainingCandidates--}
-    try{
-      const playable=await operationAwait(validateCandidate(selected,i+1,token),token.operation);
-      validations.push({rank:i+1,trackId:WaveRecommendation.idOf(selected.track),title:selected.track.title,source:selected.track.source,playable:!!playable});
-      if(!tokenIsCurrent(token)||!isCandidateApplicable(selected.track,token,reservationId,allowRecent)){logPlayback('STALE_RESULT_DISCARDED',{discardedTrackKey:playbackKey(selected.track)});releaseReservation(reservationId);if(!tokenIsCurrent(token))return null;continue}
-      if(playable&&isCandidateApplicable(playable,token,reservationId,allowRecent)){let result=selectedTrack(selected,playable);result._reservationId=reservationId;handedOff=true;logPlayback('SELECTED',{selectedTrackKey:playbackKey(result),selectionRank:selected.rankBeforeSampling??null,sampledPosition:selected.sampledPosition??null});return result}
-    }finally{if(!handedOff)releaseReservation(reservationId)}
-  }
+  let cursor=0,finished=false,active=0;const pending=new Map(),limit=Math.min(weighted.length,MAX_STREAM_VALIDATION_CANDIDATES);
+  let resolveResult;const result=new Promise(resolve=>resolveResult=resolve);
+  const finish=winner=>{if(finished)return;finished=true;for(const [id,controller] of pending){if(id!==winner?._reservationId){controller.abort();releaseReservation(id)}}resolveResult(winner)};
+  const worker=async()=>{
+    active++;
+    try{while(!finished&&cursor<limit&&tokenIsCurrent(token)){
+      const i=cursor++,selected=weighted[i],reservationId=reserveCandidate(selected.track,token,allowRecent);if(!reservationId)continue;
+      if(token.operation){if(token.operation.remainingCandidates<=0){releaseReservation(reservationId);break}token.operation.remainingCandidates--}
+      const controller=new AbortController();pending.set(reservationId,controller);let handedOff=false;
+      try{
+        const playable=await operationAwait(validateCandidate(selected,i+1,token,controller.signal),token.operation);
+        validations.push({rank:i+1,trackId:WaveRecommendation.idOf(selected.track),source:selected.track.source,playable:!!playable});
+        if(finished)break;
+        if(!tokenIsCurrent(token)||!isCandidateApplicable(selected.track,token,reservationId,allowRecent)){logPlayback('STALE_RESULT_DISCARDED',{discardedTrackKey:playbackKey(selected.track)});continue}
+        if(playable&&isCandidateApplicable(playable,token,reservationId,allowRecent)){const chosen=selectedTrack(selected,playable);chosen._reservationId=reservationId;handedOff=true;logPlayback('SELECTED',{selectedTrackKey:playbackKey(chosen),selectionRank:selected.rankBeforeSampling??null,sampledPosition:selected.sampledPosition??null});finish(chosen);break}
+      }finally{pending.delete(reservationId);if(!handedOff)releaseReservation(reservationId)}
+    }}finally{active--;if(!active&&!finished)finish(null)}
+  };
+  const concurrency=playbackController.validationConcurrency||2;
+  for(let i=0;i<concurrency;i++)void worker().catch(()=>finish(null));
+  let winner;try{winner=await operationAwait(result,token.operation)}finally{if(!finished)finish(null)}
+  if(winner)return winner;
   logPlayback('POOL_EXHAUSTED');return null;
 }
 
 window.waveDebugSummary=()=>{let tracks=window.__lastWaveSelections.slice(-60),positions=new Map(),repeatingIds=new Set(),minimumRepeatDistance=null;tracks.forEach((id,index)=>{if(positions.has(id)){repeatingIds.add(id);let distance=index-positions.get(id);minimumRepeatDistance=minimumRepeatDistance===null?distance:Math.min(minimumRepeatDistance,distance)}positions.set(id,index)});let eligible=WaveRecommendation.eligibleCandidates(catalog.filter(t=>!failedTrackIds.has(WaveRecommendation.idOf(t))),waveSession);return {lastTracks:tracks,uniqueCount:new Set(tracks).size,repeatingIds:[...repeatingIds],minimumRepeatDistance,catalogSize:catalog.length,eligiblePoolSize:eligible.candidates.length,hardBlockWindow:eligible.windowSize}};
-const current=()=>queue[index], fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+const current=()=>queue[index];
+function fmt(value){const seconds=Number.isFinite(Number(value))&&Number(value)>0?Math.floor(Number(value)):0,hours=Math.floor(seconds/3600),minutes=Math.floor(seconds/60)%60,tail=String(seconds%60).padStart(2,'0');return hours?`${hours}:${String(minutes).padStart(2,'0')}:${tail}`:`${Math.floor(seconds/60)}:${tail}`}
+window.waveFormatTime=fmt;
+const startupTraces=[];
+let startupTrace=null;
+function beginStartup(){startupTrace={id:crypto.randomUUID(),at:performance.now(),marks:{},candidates:new Map(),completed:false};startupMark('wave_click')}
+function startupMark(phase,track=null){const trace=startupTrace;if(!trace||trace.completed)return;const now=performance.now(),key=track?playbackKey(track):null,candidatePhase=['candidate_selected','stream_validation_start','stream_validation_ok'].includes(phase);if(candidatePhase&&key){let marks=trace.candidates.get(key)||{};marks[phase]??=now;trace.candidates.set(key,marks);return}trace.marks[phase]??=now;performance.mark(`wave:${phase}`);performance.clearMarks(`wave:${phase}`);if(phase==='playing'){trace.completed=true;const m=trace.marks,span=(a,b)=>m[a]!=null&&m[b]!=null?Math.round((m[b]-m[a])*10)/10:null;startupTraces.push({id:trace.id,marks:Object.fromEntries(Object.entries(m).map(([k,v])=>[k,Math.round((v-trace.at)*10)/10])),clickToCandidateMs:span('wave_click','candidate_selected'),candidateToValidatedMs:span('candidate_selected','stream_validation_ok'),validatedToPlayMs:span('stream_validation_ok','play_called'),playToPlayingMs:span('play_called','playing'),totalMs:span('wave_click','playing')});if(startupTraces.length>20)startupTraces.shift()}}
+function startupChoose(track){if(startupTrace&&!startupTrace.completed)Object.assign(startupTrace.marks,startupTrace.candidates.get(playbackKey(track))||{})}
+window.waveStartupTimings=()=>startupTraces.slice();
 const playbackController={sessionId:waveSession.sessionId||(waveSession.sessionId=crypto.randomUUID()),contextRevision:0,transitionSequence:0,activeTransition:null,pendingNext:false,reservations:new Map(),reservationSequence:0,playbackSequence:0,mediaSequence:0,event:null,bindings:new Map(),events:[],confirmedStarts:[],operation:null};
 function playbackKey(track){return WaveTrackModel.sourceKey(track)}
 function samePlaybackRecording(a,b){return WaveTrackModel.samePlaybackRecording(a,b)}
@@ -249,7 +278,7 @@ function releaseMedia(element){
   for(let name of ['onended','onerror','onpause','onplay','onplaying','oncanplay','onwaiting','onstalled','onloadedmetadata','ontimeupdate','onseeking','onseeked'])element[name]=null;
   element.pause();element.removeAttribute('src');element.load();playbackController.bindings.delete(element);
 }
-window.waveDiagnostics=()=>({buildId:WAVE_BUILD,sessionId:playbackController.sessionId,controller:{bufferGeneration:preloadRequestId,contextRevision:playbackController.contextRevision,activeTransition:playbackController.activeTransition?.id||null,fillActive:!!bufferFillPromise,reservedCount:playbackController.reservations.size},summary:window.waveDebugSummary(),confirmedStarts:[...playbackController.confirmedStarts],events:[...playbackController.events]});
+window.waveDiagnostics=()=>({startupTimings:window.waveStartupTimings(),buildId:WAVE_BUILD,sessionId:playbackController.sessionId,controller:{bufferGeneration:preloadRequestId,contextRevision:playbackController.contextRevision,activeTransition:playbackController.activeTransition?.id||null,fillActive:!!bufferFillPromise,reservedCount:playbackController.reservations.size},summary:window.waveDebugSummary(),confirmedStarts:[...playbackController.confirmedStarts],events:[...playbackController.events]});
 async function copyWaveDiagnostics(){
   const text=JSON.stringify(window.waveDiagnostics(),null,2);try{if(!navigator.clipboard?.writeText)throw Error('clipboard unavailable');await navigator.clipboard.writeText(text);toast('Диагностика скопирована')}catch{const field=$('#diagnosticText');field.hidden=false;field.value=text;field.focus();field.select();toast('Выдели и скопируй текст диагностики')}
 }
@@ -263,12 +292,12 @@ function invalidateNextBuffer(reason='manual',debounce=false){
 }
 function preloadTrack(track,requestId){
   cancelPreloadAudio();if(!track?.stream)return;
-  let element=new Audio(),isIOS=/iP(?:hone|ad|od)/.test(navigator.userAgent);preloadMedia=element;preloadReady=false;
-  element.dataset.trackId=String(track.id);element.dataset.generation=String(requestId);element.dataset.mediaElementId='media:'+ ++playbackController.mediaSequence;element.preload=isIOS?'metadata':'auto';element.volume=+$('#volume').value/100;
+  let element=new Audio();preloadMedia=element;preloadReady=false;
+  element.dataset.trackId=String(track.id);element.dataset.generation=String(requestId);element.dataset.mediaElementId='media:'+ ++playbackController.mediaSequence;element.preload='auto';element.volume=+$('#volume').value/100;
   if(track.waveAnalysisAllowed)element.crossOrigin='anonymous';
   console.log('PRELOAD_START',{trackId:track.id,source:track.activeSource||track.source});
-  let ready=()=>{if(Number(element.dataset.generation)!==preloadRequestId||preloadMedia!==element||!samePlaybackRecording(playbackBuffer.next,track))return;preloadReady=true;logPlayback('PRELOAD_READY',{preparedTrackKey:playbackKey(track),mediaElementId:element.dataset.mediaElementId,readyState:element.readyState,bufferedAheadSeconds:bufferedAhead(element)})};
-  element.oncanplay=ready;
+  let ready=()=>{if(Number(element.dataset.generation)!==preloadRequestId||preloadMedia!==element||!samePlaybackRecording(playbackBuffer.next,track)||element.readyState<3)return;const ahead=bufferedAhead(element);if(ahead!==null&&ahead<.15&&element.readyState<4)return;preloadReady=true;logPlayback('PRELOAD_READY',{preparedTrackKey:playbackKey(track),mediaElementId:element.dataset.mediaElementId,readyState:element.readyState,bufferedAheadSeconds:bufferedAhead(element)})};
+  element.onloadeddata=element.oncanplay=element.oncanplaythrough=ready;
   element.onerror=()=>{if(requestId!==preloadRequestId||preloadMedia!==element)return;preloadReady=false;logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorCode:element.error?.code??null})};
   element.src=track.stream;element.load();
 }
@@ -356,9 +385,9 @@ async function pickForTransition(operation){
 }
 async function start(){
   return runTransition('start',async operation=>{
-    unlockPlayback();ensureWaveAudioContext();advanceBufferGeneration('start',true);failedTrackIds.clear();playbackStoppedOnError=false;setPlayerState(PLAYER_STATES.LOADING);$('#waveOrb').disabled=true;$('#player').classList.add('visible');$('#miniPlayer').classList.add('visible');
-    await operationAwait(loadCatalog(true),operation);let chosen=await pickForTransition(operation);if(!chosen){showPoolExhausted();return false}
-    const outgoing=currentBinding();finalizePlayback(outgoing?.event,'next',outgoing);if(outgoing)releaseMedia(outgoing.element);
+    beginStartup();startupMark('recommendation_start');unlockPlayback();ensureWaveAudioContext();advanceBufferGeneration('start',true);failedTrackIds.clear();playbackStoppedOnError=false;setPlayerState(PLAYER_STATES.LOADING);$('#waveOrb').disabled=true;$('#player').classList.add('visible');$('#miniPlayer').classList.add('visible');
+    await operationAwait(loadCatalog(false,false,false,true),operation);let chosen=await pickForTransition(operation);if(!chosen){showPoolExhausted();return false}
+    startupChoose(chosen);const outgoing=currentBinding();finalizePlayback(outgoing?.event,'next',outgoing);if(outgoing)releaseMedia(outgoing.element);
     queue=[chosen];index=0;releaseReservation(chosen._reservationId);delete chosen._reservationId;load();await play();return true;
   });
 }
@@ -476,7 +505,7 @@ async function sound(t){
     if(!binding||binding.event!==event){binding={element,event,released:false,recovering:false};playbackController.bindings.set(element,binding)}
     const owns=()=>media===element&&playbackController.event===event&&!binding.released;
     element.onplay=()=>{if(owns())setPlayerState(PLAYER_STATES.LOADING)};
-    element.onplaying=()=>{if(!owns())return;markPlaying(binding);setPlayerState(PLAYER_STATES.PLAYING);playbackStoppedOnError=false;if(nextStartedAt){logPlayback('NEXT_LATENCY',{latencyMs:Math.round(performance.now()-nextStartedAt)});nextStartedAt=0}};
+    element.onplaying=()=>{if(!owns())return;startupMark('playing');markPlaying(binding);setPlayerState(PLAYER_STATES.PLAYING);playbackStoppedOnError=false;if(nextStartedAt){logPlayback('NEXT_LATENCY',{latencyMs:Math.round(performance.now()-nextStartedAt)});nextStartedAt=0}};
     element.onwaiting=()=>{sampleListening(binding);event.active=false;if(owns())setPlayerState(PLAYER_STATES.LOADING)};
     element.onstalled=()=>{sampleListening(binding);if(element.readyState<3){event.active=false;if(owns())setPlayerState(PLAYER_STATES.LOADING)}};
     element.onpause=()=>{sampleListening(binding);event.active=false;if(owns()&&!element.ended)setPlayerState(PLAYER_STATES.PAUSED)};
@@ -484,12 +513,12 @@ async function sound(t){
     element.onseeking=()=>{sampleListening(binding);event.active=false};
     element.onseeked=()=>{event.lastPosition=element.currentTime;event.lastWallAt=performance.now();event.active=event.confirmed&&!element.paused&&!element.ended&&element.readyState>=3};
     element.onloadedmetadata=()=>{if(!owns())return;if(Number.isFinite(element.duration)&&element.duration>0)t.duration=element.duration;if(elapsed>0&&elapsed<element.duration)element.currentTime=elapsed;renderPlayerUI()};
-    element.oncanplay=()=>{if(owns())renderPlayerUI()};
+    element.oncanplay=()=>{if(owns()){startupMark('canplay');renderPlayerUI()}};element.oncanplaythrough=()=>{if(owns())startupMark('canplaythrough')};
     element.onended=()=>handleTrackEnded(element,binding);
     element.onerror=()=>{sampleListening(binding);event.active=false;if(owns())void recoverPlayback(binding)};
-    if(!prepared&&element.src!==t.stream){if(t.waveAnalysisAllowed)element.crossOrigin='anonymous';else element.removeAttribute('crossorigin');element.src=t.stream}
+    startupMark('audio_load_start');if(!prepared&&element.src!==t.stream){if(t.waveAnalysisAllowed)element.crossOrigin='anonymous';else element.removeAttribute('crossorigin');element.src=t.stream}
     attachWaveAnalyzer(element,t);
-    try{await element.play();return owns()&&!element.paused}catch(error){handlePlayRejection(error,element,binding);return false}
+    try{startupMark('play_called');await element.play();return owns()&&!element.paused}catch(error){handlePlayRejection(error,element,binding);return false}
   }
   const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;
   if(audio){await audio.resume();markPlaying(playbackController.bindings.get(audio));return true}
