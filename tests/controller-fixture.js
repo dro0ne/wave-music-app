@@ -5,6 +5,7 @@ const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve()};
 let fixtureHtml=null;
 function installFixture(seed=1){
   window.originalLoadCatalog=loadCatalog;
+  window.nativeSetTimeout=setTimeout;window.nativeClearTimeout=clearTimeout;
   clearInterval(timer);stopSound();cancelPreloadAudio();tabChannel?.close();if(tabChannel)tabChannel.postMessage=()=>{};
   playbackController.validationConcurrency=1;
   let now=0,taskId=0,tasks=new Map(),elements=new Set();
