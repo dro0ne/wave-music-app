@@ -100,7 +100,7 @@ async function fetchArchiveTracks(query){
   let items=await Promise.all(docs.map(async doc=>{try{let meta=await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`,{signal:AbortSignal.timeout(9000)}).then(r=>r.json());let file=(meta.files||[]).find(f=>['VBR MP3','MP3'].includes(f.format)&&f.name&&!f.name.includes('_64kb'));if(!file)return null;return{id:`ia:${doc.identifier}`,title:doc.title||file.title||doc.identifier,artist:Array.isArray(doc.creator)?doc.creator[0]:doc.creator||'Internet Archive',genre:query||'Открытая музыка',duration:Math.round(+file.length)||180,artwork:`https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,stream:`https://archive.org/download/${encodeURIComponent(doc.identifier)}/${file.name.split('/').map(encodeURIComponent).join('/')}`,source:'Internet Archive',_reason:'Открытая лицензия · Internet Archive'}}catch{return null}}));
   return items.filter(Boolean)
 }
-let catalogTask=null,catalogRequest=0;
+let catalogTask=null,catalogRequest=0,catalogGenreLevel='ALL';
 async function loadCatalog(force=false,merge=false,quiet=false,firstBatch=false){
   if(catalog.length&&!force&&Date.now()-catalogLoadedAt<15*60*1000)return catalog;
   const revision=playbackController.contextRevision;
@@ -108,15 +108,15 @@ async function loadCatalog(force=false,merge=false,quiet=false,firstBatch=false)
   const request=++catalogRequest,m=MOODS.find(x=>x[0]===state.mood)||MOODS[0],genres=state.genres.slice(0,8).map(label=>genreMap[label]||label);
   let firstResolve,combined=merge?catalog.slice():[],published=false;
   const initial=new Promise(resolve=>firstResolve=resolve),valid=()=>revision===playbackController.contextRevision&&request===catalogRequest;
-  const publish=(tracks,emergency=false)=>{if(!valid())return;combined=sourceManager.deduplicate([...combined,...tracks.map(t=>normalize(t,m))]);const selection=WaveGenre.selectPool(combined,genres,{emergency});if(selection.tracks.length){catalog=sourceManager.deduplicate(selection.tracks);catalogLoadedAt=Date.now();if(!published){published=true;firstResolve(catalog)}}};
+  const publish=(tracks,emergency=false)=>{if(!valid())return;combined=sourceManager.deduplicate([...combined,...tracks.map(t=>normalize(t,m))]);const selection=WaveGenre.selectPool(combined,genres,{emergency});if(selection.tracks.length){catalog=sourceManager.deduplicate(selection.tracks);catalogGenreLevel=selection.level;catalogLoadedAt=Date.now();if(!published){published=true;firstResolve(catalog)}}};
   const complete=Promise.resolve().then(async()=>{
     try{
-      const source=await sourceManager.getCatalog({genres,onBatch:tracks=>publish(tracks)});if(!valid()){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}publish(source);
+      const source=await sourceManager.getCatalog({genres,mood:state.mood,onBatch:tracks=>publish(tracks)});if(!valid()){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}publish(source);
       if(catalog.length<12||!published){const queries=[...new Set(genres.flatMap(g=>WaveGenre.queriesFor(g)))].slice(0,6);const settled=await Promise.allSettled(queries.map(q=>sourceManager.searchTracks(q)));for(const result of settled)if(result.status==='fulfilled')publish(result.value)}
-      if(!published)publish([],true);
-      if(!published&&valid()){catalog=fallbackQueue().map(t=>normalize(t,m));catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
+      if(!published&&combined.length&&valid()){catalog=[];catalogGenreLevel='NONE';catalogLoadedAt=Date.now();if(!quiet)toast('По выбранным жанрам сейчас ничего не нашлось — попробуй другой жанр');return catalog}
+      if(!published&&valid()){catalog=fallbackQueue().map(t=>normalize(t,m));catalogGenreLevel='ALL';catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
       return catalog;
-    }catch(error){if(valid()&&!catalog.length){catalog=fallbackQueue().map(t=>normalize(t,m));if(!quiet)toast('Нет связи — включён локальный демо-режим')}return catalog}
+    }catch(error){if(valid()&&!catalog.length){catalog=fallbackQueue().map(t=>normalize(t,m));catalogGenreLevel='ALL';if(!quiet)toast('Нет связи — включён локальный демо-режим')}return catalog}
     finally{firstResolve(catalog);if(catalogTask?.request===request)catalogTask=null}
   });
   catalogTask={revision,request,initial,complete};return firstBatch?initial:complete;
@@ -229,7 +229,7 @@ function logPlayback(action,details={}){
   const event={buildId:WAVE_BUILD,eventTime:new Date().toISOString(),sessionId:playbackController.sessionId,playbackEventId:playbackController.event?.id||null,transitionId:playbackController.activeTransition?.id||null,bufferGeneration:preloadRequestId,contextRevision:playbackController.contextRevision,action,transitionReason:playbackController.activeTransition?.reason||null,currentTrackKey:current()?playbackKey(current()):null,nextTrackKey:playbackBuffer.next?playbackKey(playbackBuffer.next):null,backupTrackKey:playbackBuffer.backupNext?playbackKey(playbackBuffer.backupNext):null,selectedMood:state.mood,selectedGenres:[...state.genres],noveltyLevel:state.discovery/100,repeatMode:state.repeatCurrent,catalogSize:catalog.length,matchedGenreCount:catalog.filter(matchesCurrentGenre).length,eligibleCount:eligible.candidates.length,recentBlockedCount:eligible.hardBlockedCount,reservedCount:playbackController.reservations.size,failedSourceCount:failedTrackIds.size,selectionRank:null,sampledPosition:null,canonicalRecordingKey:current()?.canonicalRecordingKey||null,mediaElementId:element?.dataset.mediaElementId||null,currentTime:Number.isFinite(element?.currentTime)?element.currentTime:null,duration:Number.isFinite(element?.duration)?element.duration:null,readyState:element?.readyState??null,networkState:element?.networkState??null,bufferedAheadSeconds:bufferedAhead(element),errorName:null,errorCode:null,...details};
   playbackController.events.push(event);if(playbackController.events.length>300)playbackController.events.shift();
 }
-function matchesCurrentGenre(track){return !state.genres.length||state.genres.some(label=>WaveGenre.match(track,genreMap[label]||label).level!=='NONE')}
+function matchesCurrentGenre(track){return WaveGenre.withinLevel(track,state.genres.map(label=>genreMap[label]||label),catalogGenreLevel)}
 function newPlaybackOperation(reason){return {id:++playbackController.transitionSequence,reason,deadline:performance.now()+30000,remainingCandidates:MAX_STREAM_VALIDATION_CANDIDATES,retries:0,replenished:false}}
 function selectionToken(operation=null){return {sessionId:playbackController.sessionId,generation:preloadRequestId,contextRevision:playbackController.contextRevision,operation}}
 function tokenIsCurrent(token){return token.sessionId===playbackController.sessionId&&token.generation===preloadRequestId&&token.contextRevision===playbackController.contextRevision&&(!token.operation||performance.now()<token.operation.deadline)}
@@ -537,8 +537,8 @@ async function sound(t){
 
 function clampWaveBpm(value){let bpm=Number(value)||90;return Math.max(45,Math.min(200,bpm))}
 function ensureWaveAudioContext(){let AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;try{if(!waveAudioContext)waveAudioContext=new AC();if(waveAudioContext.state==='suspended')void waveAudioContext.resume().catch(()=>{});return waveAudioContext}catch(error){console.warn('WAVE_AUDIO_CONTEXT_UNAVAILABLE',{error:error.message});return null}}
-function attachWaveAnalyzer(element,track){waveTrackBpm=clampWaveBpm(track.tempo||track.bpm||MOODS.find(m=>m[0]===state.mood)?.[2]);if(!track.waveAnalysisAllowed){waveAnalyzer=null;return false}try{let ctx=ensureWaveAudioContext();if(!ctx)return false;let existing=waveAudioNodes.get(element);if(existing){waveAnalyzer=existing.analyser;return true}let source=ctx.createMediaElementSource(element);source.connect(ctx.destination);let analyser=ctx.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.86;let silent=ctx.createGain();silent.gain.value=0;source.connect(analyser);analyser.connect(silent);silent.connect(ctx.destination);waveAudioNodes.set(element,{source,analyser,silent});element.dataset.waveAnalyzed='true';waveAnalyzer=analyser;return true}catch(error){console.warn('WAVE_ANALYZER_UNAVAILABLE',{source:track.activeSource||track.source,error:error.message});waveAnalyzer=null;return false}}
-window.waveBackdrop=new WaveBackdrop($('#waveCanvas'),()=>waveAnalyzer);
+function attachWaveAnalyzer(element,track){waveTrackBpm=clampWaveBpm(track.tempo||track.bpm||MOODS.find(m=>m[0]===state.mood)?.[2]);window.waveBackdrop?.trackChanged(waveTrackBpm);if(!track.waveAnalysisAllowed){waveAnalyzer=null;return false}try{let ctx=ensureWaveAudioContext();if(!ctx)return false;let existing=waveAudioNodes.get(element);if(existing){waveAnalyzer=existing.analyser;return true}let source=ctx.createMediaElementSource(element);source.connect(ctx.destination);let analyser=ctx.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.86;let silent=ctx.createGain();silent.gain.value=0;source.connect(analyser);analyser.connect(silent);silent.connect(ctx.destination);waveAudioNodes.set(element,{source,analyser,silent});element.dataset.waveAnalyzed='true';waveAnalyzer=analyser;return true}catch(error){console.warn('WAVE_ANALYZER_UNAVAILABLE',{source:track.activeSource||track.source,error:error.message});waveAnalyzer=null;return false}}
+window.waveBackdrop=new WaveBackdrop($('#waveCanvas'),()=>waveAnalyzer,{readBpm:()=>waveTrackBpm,anchor:$('#waveOrb')});
 window.waveBackdrop.setMood(state.mood);
 function stopWaveVisualizer(){window.waveBackdrop.setState(playerState||PLAYER_STATES.IDLE)}
 function startWaveVisualizer(){window.waveBackdrop.setState(playerState||PLAYER_STATES.PLAYING)}

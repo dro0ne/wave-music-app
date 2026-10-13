@@ -233,7 +233,7 @@ html{overflow-x:clip}
 
 /* Desktop composition and decorative geometry; mobile player sizing is retained. */
 .wavefield,body.wave-playing .wavefield,body[data-wave-mood] .wavefield,body.wave-playing[data-wave-mood] .wavefield{animation:none;transform:none;filter:none;will-change:auto;transition:none;opacity:1;background-image:none;mask-image:linear-gradient(transparent,#000 10%,#000 80%,transparent)}
-.wavefield:before{content:'';position:absolute;inset:0;background:url('assets/wave-atmosphere.png') center/cover no-repeat;opacity:.35;pointer-events:none}
+.wavefield:before{content:none}
 .wave-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @media(min-width:1100px){
  :root{--sidebar:210px;--stage-x:clamp(28px,2.5vw,48px);--player-height:104px}
