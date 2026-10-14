@@ -14,7 +14,11 @@
   const termRe=term=>new RegExp(`(^|[^${WORD}])${escape(clean(term))}(?=$|[^${WORD}])`);
   // Uploaders often write multi-word tags joined ("postrock", "dreampop"), so each such term also matches its compact spelling.
   const terms=mappings.flatMap(([name,aliases,subs],order)=>[...aliases.map(term=>({family:name,term:clean(term),sub:false,order})),...subs.map(term=>({family:name,term:clean(term),sub:true,order}))]).flatMap(x=>x.term.includes(' ')?[x,{...x,canonical:x.term,term:x.term.replace(/ /g,'')}]:[x]).map(x=>({...x,re:termRe(x.term)}));
-  function findTerms(text){if(!text)return [];return terms.map(x=>{let m=x.re.exec(text);return m?{...x,pos:m.index+m[1].length}:null}).filter(Boolean)}
+  // Terms are looked up by whole-word phrases in a table instead of running every pattern over every track:
+  // catalogs bring hundreds of tracks at once and the page must not stall while they are classified.
+  const tokensOf=text=>text.replace(/[^a-z0-9а-яё&|]+/g,' ').replace(/\|/g,' | ').split(' ').filter(Boolean),byPhrase=new Map();let longest=1;
+  for(const x of terms){const key=tokensOf(x.term).join(' ');longest=Math.max(longest,key.split(' ').length);if(!byPhrase.has(key))byPhrase.set(key,[]);byPhrase.get(key).push(x)}
+  function findTerms(text){if(!text)return [];const words=tokensOf(text),found=[];for(let i=0;i<words.length;i++){let phrase='';for(let n=0;n<longest&&i+n<words.length;n++){const word=words[i+n];if(word==='|')break;phrase=n?phrase+' '+word:word;const hits=byPhrase.get(phrase);if(hits)for(const x of hits)found.push({...x,pos:i})}}return found}
   // The earliest term wins; on a tie the longer (more specific) term wins, then list order.
   function pickFamily(found){return found.slice().sort((a,b)=>a.pos-b.pos||b.term.length-a.term.length||a.order-b.order)[0]?.family}
   const wordsRe=words=>{let res=words.map(termRe);return text=>res.some(re=>re.test(text))},rapWords=wordsRe(['rap','рэп','hip hop','хип хоп','trap','трэп']),russianWords=wordsRe(['russian','ru rap','ru hip hop']);
