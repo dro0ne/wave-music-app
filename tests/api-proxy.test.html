@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<script>
+// The backend is faked through fetch before api-proxy.js loads, because the module checks health on load.
+const calls=[];let backend={up:true,jamendo:true,failCatalog:false};
+window.fetch=async(url)=>{url=String(url);calls.push(url);const ok=body=>({ok:true,status:200,json:async()=>body});if(url==='api/health')return backend.up?ok({ok:true,jamendo:backend.jamendo}):{ok:false,status:404};if(url.startsWith('api/'))return backend.failCatalog?{ok:false,status:502}:ok({via:'proxy'});return ok({via:'direct'})};
+</script>
+<script src="../sources/api-proxy.js"></script>
+<script src="api-proxy.test.js"></script>
