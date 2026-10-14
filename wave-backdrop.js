@@ -24,10 +24,19 @@
     else if(name==='wave'){ctx.lineWidth=s*.05;for(let k=0;k<3;k++){ctx.beginPath();for(let x=0;x<=s;x+=2){let y=c+(k-1)*s*.17+Math.sin(x/s*TAU*1.5+k)*s*.09;x?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke()}}
     else if(name==='bolt'){[[.58,.03],[.24,.53],[.47,.53],[.36,.97],[.78,.4],[.53,.4],[.7,.03]].forEach(([x,y],i)=>ctx[i?'lineTo':'moveTo'](x*s,y*s));ctx.closePath();ctx.fill()}
     else if(name==='car'){
-      ctx.moveTo(s*.05,s*.62);ctx.lineTo(s*.07,s*.5);ctx.quadraticCurveTo(s*.1,s*.44,s*.24,s*.42);ctx.lineTo(s*.34,s*.29);ctx.quadraticCurveTo(s*.4,s*.24,s*.52,s*.24);ctx.lineTo(s*.66,s*.25);ctx.quadraticCurveTo(s*.72,s*.27,s*.79,s*.41);ctx.lineTo(s*.9,s*.44);ctx.quadraticCurveTo(s*.96,s*.47,s*.95,s*.62);ctx.closePath();ctx.fill();
-      ctx.globalCompositeOperation='destination-out';ctx.beginPath();ctx.moveTo(s*.37,s*.41);ctx.lineTo(s*.43,s*.3);ctx.lineTo(s*.55,s*.3);ctx.lineTo(s*.55,s*.41);ctx.moveTo(s*.59,s*.41);ctx.lineTo(s*.59,s*.3);ctx.lineTo(s*.66,s*.31);ctx.lineTo(s*.72,s*.41);ctx.fill();
-      [.27,.75].forEach(x=>{ctx.beginPath();ctx.arc(x*s,s*.63,s*.11,0,TAU);ctx.fill()});ctx.globalCompositeOperation='source-over';
-      [.27,.75].forEach(x=>{ctx.beginPath();ctx.lineWidth=s*.035;ctx.arc(x*s,s*.63,s*.085,0,TAU);ctx.stroke();ctx.beginPath();ctx.arc(x*s,s*.63,s*.025,0,TAU);ctx.fill()})}
+      // A sleek sedan in profile, nose to the left: long hood, sloped roof, short trunk.
+      // Headlights are painted cyan and taillights red, so their particles can glow in their own colours.
+      const P=(x,y)=>[x*s,y*s],path=points=>{ctx.beginPath();points.forEach(([x,y],i)=>ctx[i?'lineTo':'moveTo'](x*s,y*s));ctx.closePath()};
+      ctx.beginPath();ctx.moveTo(...P(.05,.6));ctx.lineTo(...P(.035,.535));ctx.quadraticCurveTo(...P(.04,.49),...P(.09,.48));ctx.quadraticCurveTo(...P(.22,.455),...P(.34,.44));ctx.quadraticCurveTo(...P(.4,.36),...P(.47,.31));ctx.quadraticCurveTo(...P(.56,.285),...P(.65,.295));ctx.quadraticCurveTo(...P(.75,.33),...P(.83,.405));ctx.lineTo(...P(.93,.415));ctx.quadraticCurveTo(...P(.965,.45),...P(.96,.53));ctx.lineTo(...P(.945,.6));ctx.closePath();ctx.fill();
+      ctx.globalCompositeOperation='destination-out';
+      path([[.37,.435],[.465,.335],[.555,.318],[.555,.432]]);ctx.fill();path([[.575,.432],[.575,.318],[.65,.322],[.765,.405],[.74,.432]]);ctx.fill();
+      [.215,.775].forEach(x=>{ctx.beginPath();ctx.arc(x*s,.6*s,.098*s,0,TAU);ctx.fill()});
+      ctx.lineWidth=s*.008;ctx.beginPath();ctx.moveTo(...P(.56,.45));ctx.lineTo(...P(.565,.585));ctx.moveTo(...P(.1,.515));ctx.quadraticCurveTo(...P(.5,.49),...P(.94,.47));ctx.stroke();
+      ctx.globalCompositeOperation='source-over';
+      ctx.beginPath();ctx.ellipse(...P(.385,.448),.022*s,.013*s,0,0,TAU);ctx.fill();
+      [.215,.775].forEach(x=>{const [cx,cy]=P(x,.6);ctx.beginPath();ctx.lineWidth=s*.024;ctx.arc(cx,cy,.072*s,0,TAU);ctx.stroke();ctx.lineWidth=s*.012;for(let k=0;k<5;k++){const a=k/5*TAU;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*.064*s,cy+Math.sin(a)*.064*s);ctx.stroke()}ctx.beginPath();ctx.arc(cx,cy,.018*s,0,TAU);ctx.fill()});
+      ctx.fillStyle='#00ffff';path([[.045,.5],[.12,.478],[.145,.49],[.06,.522]]);ctx.fill();ctx.fillRect(.05*s,.548*s,.06*s,.01*s);
+      ctx.fillStyle='#ff0000';path([[.905,.418],[.955,.432],[.958,.458],[.9,.45]]);ctx.fill();ctx.fillStyle='#fff'}
     else if(name==='dancer'){
       const [la,lf,ra,rf,lt,ls,rt,rs,sway]=pose||DANCE_POSES[0],hip=[c+sway*s,c+s*.1],neck=[c+sway*s*.4,c-s*.2],limb=(from,angle,len)=>[from[0]+Math.cos(angle+Math.PI/2)*len*s,from[1]+Math.sin(angle+Math.PI/2)*len*s],line=(points,w)=>{ctx.beginPath();ctx.lineWidth=w*s;points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p[0],p[1]));ctx.stroke()};
       line([hip,neck],.075);ctx.beginPath();ctx.arc(neck[0],neck[1]-s*.09,s*.065,0,TAU);ctx.fill();
@@ -40,11 +49,13 @@
   function sampleShape(name,count,pose,poseIndex=0){
     const key=`${name}:${count}:${poseIndex}`;if(shapeCache.has(key))return shapeCache.get(key);
     const size=160,canvas=document.createElement('canvas');canvas.width=canvas.height=size;const ctx=canvas.getContext('2d',{willReadFrequently:true});drawShape(ctx,name,size,pose);
-    const data=ctx.getImageData(0,0,size,size).data,filled=(x,y)=>x>=0&&y>=0&&x<size&&y<size&&data[(y*size+x)*4+3]>128,edges=[],inside=[];
+    const data=ctx.getImageData(0,0,size,size).data,filled=(x,y)=>x>=0&&y>=0&&x<size&&y<size&&data[(y*size+x)*4+3]>128,accent=(x,y)=>{const i=(y*size+x)*4;return data[i]<120&&data[i+2]>180?1:data[i]>180&&data[i+1]<120?2:0},edges=[],inside=[];
     for(let y=0;y<size;y+=1)for(let x=0;x<size;x+=1){if(!filled(x,y))continue;(filled(x-2,y)&&filled(x+2,y)&&filled(x,y-2)&&filled(x,y+2)?inside:edges).push([x,y])}
     // Outlines get most particles so the shape reads clearly even behind the orb.
     const points=[],pick=list=>list[Math.floor(Math.random()*list.length)];
-    for(let i=0;i<count;i++){const p=(inside.length&&Math.random()>.62)||!edges.length?pick(inside.length?inside:edges):pick(edges);points.push(p?[(p[0]+Math.random()-size/2)/(size/2),(p[1]+Math.random()-size/2)/(size/2)]:[0,0])}
+    // Small glowing details (headlights, taillights) get extra particles so they read as lights.
+    const lights=[...edges,...inside].filter(([x,y])=>accent(x,y)),fill=name==='car'?.82:.62;
+    for(let i=0;i<count;i++){const p=lights.length&&Math.random()<.09?pick(lights):(inside.length&&Math.random()>fill)||!edges.length?pick(inside.length?inside:edges):pick(edges);points.push(p?[(p[0]+Math.random()-size/2)/(size/2),(p[1]+Math.random()-size/2)/(size/2),accent(p[0],p[1])]:[0,0,0])}
     shapeCache.set(key,points);return points;
   }
   // All glow sprites (colour x size step x brightness step) live in one atlas image, so a frame is a run of plain
@@ -63,7 +74,7 @@
       root.addEventListener('resize',this.resize);this.reduced.addEventListener?.('change',this.motion);document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.nextShape(true);if(this.reduced.matches)this.settle();
     }
     spawn(count){const old=this.particles;this.particles=Array.from({length:count},(_,i)=>old[i]||{x:rand(0,this.width||800),y:rand(0,this.height||600),vx:0,vy:0,tx:0,ty:0,seed:Math.random(),size:rand(.55,1.35),color:i%4});if(this.targets)this.assign(this.targets)}
-    palette(){const {atlas,cells}=buildAtlas(PALETTES[this.mood]||PALETTES['Спокойствие']);this.atlas=atlas;this.sprites=cells}
+    palette(){const {atlas,cells}=buildAtlas([...(PALETTES[this.mood]||PALETTES['Спокойствие']),'#eaf6ff','#ff3a4a']);this.atlas=atlas;this.sprites=cells}
     // The figure is centred on the orb when it is visible, otherwise on the right part of the hero.
     // Outline shapes frame the orb. Figures (dancer, car) would hide behind it, so on wide screens they stand beside it.
     locate(){const canvasRect=this.canvas.getBoundingClientRect(),orb=this.anchor?.getBoundingClientRect?.(),figure=FIGURES.includes(this.shapeName);
@@ -71,8 +82,8 @@
       const size=Math.min(orb.width,orb.height),x=orb.left+orb.width/2-canvasRect.left,y=orb.top+orb.height/2-canvasRect.top,
         // Shapes reach about half their radius from the centre; keep them clear of the faded top edge of the canvas.
         fit=(cy,r)=>Math.min(r,Math.max(size*.9,(cy-this.height*.1)/.5));
-      if(figure&&!this.mobile){const car=this.shapeName==='car',cy=y+size*(car?.18:.1);this.center={x:orb.left-canvasRect.left-size*(car?.3:.42),y:cy,r:fit(cy,size*(car?1.15:1.45))}}
-      else this.center={x,y,r:fit(y,size*(this.mobile?(figure?1.55:1.25):1.6))}}
+      if(figure&&!this.mobile){const car=this.shapeName==='car',cy=y+size*(car?.32:.1);this.center={x:orb.left-canvasRect.left-size*(car?.38:.42),y:cy,r:car?size*.6:fit(cy,size*1.45)}}
+      else this.center={x,y,r:this.shapeName==='car'?size*.68:fit(y,size*(this.mobile?(figure?1.55:1.25):1.6))}}
     shapes(){return SHAPES[this.mood]||SHAPES['Спокойствие']}
     nextShape(initial=false,slow=false){
       const list=this.shapes();if(!initial)this.shapeIndex=(this.shapeIndex+1)%list.length;const name=list[this.shapeIndex%list.length];this.shapeName=name;this.poseIndex=0;this.locate();
@@ -80,7 +91,7 @@
       if(!initial&&!slow)this.burst(.9);
     }
     nextPose(){this.poseIndex=(this.poseIndex+1)%DANCE_POSES.length;this.targets=sampleShape('dancer',this.particles.length,DANCE_POSES[this.poseIndex],this.poseIndex);this.assign(this.targets);this.morph=.7;this.morphSpeed=6}
-    assign(points){this.particles.forEach((p,i)=>{const t=points[i%points.length];p.tx=t[0];p.ty=t[1]})}
+    assign(points){this.particles.forEach((p,i)=>{const t=points[i%points.length];p.tx=t[0];p.ty=t[1];p.accent=t[2]||0})}
     settle(){this.locate();this.particles.forEach(p=>{p.x=this.center.x+p.tx*this.center.r;p.y=this.center.y+p.ty*this.center.r;p.vx=p.vy=0});this.morph=1}
     burst(strength){const {x,y}=this.center;for(const p of this.particles){const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy)||1,force=strength*rand(90,260);p.vx+=dx/d*force-dy/d*force*.35;p.vy+=dy/d*force+dx/d*force*.35}}
     // Called by the app when a new track starts: the figure slowly flows into the next shape and the tempo eases over.
@@ -113,7 +124,7 @@
       // A soft glowing "platform" under the figure, like a stage light.
       const base=ctx.createRadialGradient(cx,cy+r*1.12,0,cx,cy+r*1.12,r*.95);const tint=(PALETTES[this.mood]||PALETTES['Спокойствие'])[0];base.addColorStop(0,tint+'aa');base.addColorStop(.35,tint+'33');base.addColorStop(1,tint+'00');ctx.save();ctx.globalAlpha=glow;ctx.translate(cx,cy+r*1.12);ctx.scale(1,.22);ctx.translate(-cx,-(cy+r*1.12));ctx.fillStyle=base;ctx.fillRect(cx-r,cy+r*1.12-r,r*2,r*2);ctx.restore();
       ctx.globalCompositeOperation='lighter';const twinkle=this.bands.high,scale=this.mobile?5:6.5;
-      const visible=Math.round(this.particles.length*this.quality),last=SIZES.length-1,atlas=this.atlas;for(let i=0;i<visible;i++){const p=this.particles[i],flicker=.55+.45*Math.sin(this.phase*6+p.seed*90),size=scale*p.size*(1+this.beatPulse*.35+twinkle*.5*flicker),alpha=.5+energy*.25+flicker*.25+this.beatPulse*.15,step=size<4?0:size<6?1:size<8?2:size<10.5?3:size<13.5?4:size<17?5:size<21.5?6:last,[sx,sy,sw]=this.sprites[p.color][step][alpha<.62?0:alpha<.88?1:2],half=sw>>1;ctx.drawImage(atlas,sx,sy,sw,sw,(p.x-half)|0,(p.y-half)|0,sw,sw)}
+      const visible=Math.round(this.particles.length*this.quality),last=SIZES.length-1,atlas=this.atlas;for(let i=0;i<visible;i++){const p=this.particles[i],flicker=.55+.45*Math.sin(this.phase*6+p.seed*90),size=scale*p.size*(1+this.beatPulse*.35+twinkle*.5*flicker),alpha=.5+energy*.25+flicker*.25+this.beatPulse*.15,step=size<4?0:size<6?1:size<8?2:size<10.5?3:size<13.5?4:size<17?5:size<21.5?6:last,[sx,sy,sw]=p.accent?this.sprites[3+p.accent][Math.min(last,step+1)][2]:this.sprites[p.color][step][alpha<.62?0:alpha<.88?1:2],half=sw>>1;ctx.drawImage(atlas,sx,sy,sw,sw,(p.x-half)|0,(p.y-half)|0,sw,sw)}
       ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
     }
     debug(){const average=list=>list.length?list.reduce((a,b)=>a+b,0)/list.length:0;return {state:this.state,mode:this.state==='PLAYING'&&this.readAnalyser()?'analyser':'procedural',shape:this.shapeName,pose:this.poseIndex,beats:this.beats,bpm:+this.bpm.toFixed(1),particles:this.particles.length,reducedMotion:this.reduced.matches,hidden:document.hidden,running:!!this.frame,frames:this.frames,canvas:{width:this.canvas.width,height:this.canvas.height,ratio:this.ratio,mobile:this.mobile},averageDrawMs:+average(this.costs).toFixed(2),quality:+this.quality.toFixed(2),observedFps:+(1000/(average(this.intervals)||Infinity)).toFixed(1),activity:+this.activity.toFixed(3),bands:{...this.bands}}}

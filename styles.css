@@ -260,3 +260,11 @@ html{overflow-x:clip}
 @media(min-width:768px) and (max-width:1099px){.desktop-nav button span{white-space:nowrap}.controls>label input{width:100%;flex:1;min-width:0}.controls>label{width:100%}.control-buttons #play{width:54px;min-width:54px;height:54px}.control-buttons button{min-width:44px;height:44px}.desktop-player{padding-block:9px}.cover{width:54px;height:54px}}
 @media(max-width:767px){.wavefield:before{opacity:.3}.wave-canvas{opacity:.8}}
 @media(prefers-reduced-motion:reduce){.wavefield:before,.wave-canvas{animation:none;transform:none}}
+
+/* Glass orb: a thin glowing spectrum ring with a see-through middle, so the particle figure behind it stays visible. */
+.wave-orb:before{-webkit-mask:radial-gradient(farthest-side,transparent 93%,#000 94.5%);mask:radial-gradient(farthest-side,transparent 93%,#000 94.5%);box-shadow:none}
+.orb-glow{-webkit-mask:radial-gradient(farthest-side,transparent 82%,#000 90%,transparent 98%);mask:radial-gradient(farthest-side,transparent 82%,#000 90%,transparent 98%);opacity:.45;filter:blur(9px)}
+.orb-ring{border-color:#ffffff14}
+.orb-core{background:radial-gradient(circle,#0b0d1599 0,#0b0d1566 55%,transparent 72%);border:1px solid #ffffff22;box-shadow:none;text-shadow:0 1px 10px #000}
+.wave-orb:hover .orb-core{border-color:#b9ff4b66}
+.wave-orb:after{box-shadow:none;border-color:#ffffff10}
