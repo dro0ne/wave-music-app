@@ -6,9 +6,15 @@
   const RUSSIAN_WORDS=['я','не','в','на','ты'];
   // Subgenres that have a closer Audius genre than their family.
   const NARROW={'gospel':'Devotional','acid house':'House','detroit techno':'Techno','minimal techno':'Techno','hardcore techno':'Techno','psytrance':'Trance'};
+  // Styles that uploaders file under several Audius genres; each pair is an extra [genre, query] search.
+  const EXTRA={'synthpop':[['Electronic','synthpop'],[null,'synth pop']],'emo':[['Punk','emo'],['Alternative','emo'],[null,'midwest emo']],'chamber music':[['Classical','chamber'],['Classical','string quartet']],'tango':[[null,'tango'],[null,'bandoneon']],'8 bit':[['Electronic','chiptune'],[null,'8 bit']],'chiptune':[['Electronic','8bit']],'drill':[['Hip-Hop/Rap','ukdrill'],[null,'uk drill']]};
   // Maps a UI genre label to {genre, query}: a direct Audius genre, or the parent genre plus a text query for the subgenre.
   function genreQuery(label){
-    let clean=root.WaveGenre?.clean||(x=>String(x||'').toLowerCase().trim()),key=clean(label),direct=GENRES.find(x=>clean(x)===key);
+    let clean=root.WaveGenre?.clean||(x=>String(x||'').toLowerCase().trim()),key=clean(label),query=baseQuery(label,key,clean);
+    return EXTRA[key]?{...query,extra:EXTRA[key]}:query;
+  }
+  function baseQuery(label,key,clean){
+    let direct=GENRES.find(x=>clean(x)===key);
     if(direct)return {genre:direct,query:''};
     if(NARROW[key])return {genre:NARROW[key],query:key.replace(/ /g,'')};
     let info=root.WaveGenre?.normalizeGenre(label),genre=PARENT[info?.normalizedGenre];
@@ -22,9 +28,10 @@
   root.WaveSources=root.WaveSources||{};root.WaveSources.audius={id:'audius',label:'Audius',genreQuery,
     async searchTracks(query,{signal,limit=24,offset=0}={}){const raw=await page(`${API}/tracks/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`,signal);return finish(raw,raw.length)},
     async getTracksByGenre(label,{signal,limit=24,offset=0}={}){
-      let {genre,query,words}=genreQuery(label);if(!genre&&!words)return this.searchTracks(label,{signal,limit,offset});
+      let {genre,query,words,extra=[]}=genreQuery(label);if(!genre&&!words)return this.searchTracks(label,{signal,limit,offset});
       // A subgenre query is narrow, so the plain parent genre is fetched alongside it to keep the pool large enough.
-      let settled=await Promise.allSettled((words?[query,...words].filter(Boolean):[query,...(query?['']:[])]).map(q=>page(`${API}/tracks/search?query=${encodeURIComponent(q)}${genre?`&genre=${encodeURIComponent(genre)}`:''}&limit=${limit}&offset=${offset}`,signal))),pages=settled.filter(x=>x.status==='fulfilled').map(x=>x.value);
+      let requests=[...(words?[query,...words].filter(Boolean):[query,...(query?['']:[])]).map(q=>[genre,q]),...extra];
+      let settled=await Promise.allSettled(requests.map(([g,q])=>page(`${API}/tracks/search?query=${encodeURIComponent(q)}${g?`&genre=${encodeURIComponent(g)}`:''}&limit=${limit}&offset=${offset}`,signal))),pages=settled.filter(x=>x.status==='fulfilled').map(x=>x.value);
       if(!pages.length)throw settled[0].reason;
       let raw=[...new Map(pages.flat().map(t=>[t.id,t])).values()];return finish(raw,Math.max(...pages.map(x=>x.length)))
     },
