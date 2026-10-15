@@ -37,10 +37,8 @@
       this.canvas=canvas;this.glState=options.renderer==='2d'||!canvas?null:createGl(canvas);this.context=this.glState?this.glState.gl:canvas?.getContext('2d');this.readAnalyser=readAnalyser;this.readBpm=options.readBpm||(()=>90);this.anchor=options.anchor||null;
       this.state='IDLE';this.mood='Спокойствие';this.frame=0;this.last=0;this.phase=0;this.activity=0;this.bands={bass:0,mid:0,high:0,rms:0};this.frames=0;this.costs=[];this.intervals=[];this.reduced=root.matchMedia('(prefers-reduced-motion: reduce)');
       this.particles=[];this.snakes=[];this.beats=0;this.beatPulse=0;this.kick=0;this.beatClock=0;this.bpm=90;this.flux=[];this.onsets=[];this.lastOnset=0;this.period=0;this.nextBeatAt=0;this.locked=false;this.quality=1;this.sprites=[];this.center={x:0,y:0,r:100};
-      this.resize=()=>{if(!this.context)return;const rect=canvas.getBoundingClientRect();this.width=Math.max(1,rect.width);this.height=Math.max(1,rect.height);this.mobile=this.width<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0);const count=this.mobile?600:900;if(this.particles.length!==count)this.spawn(count);this.locate();this.render();this.resume()};
+      this.resize=()=>{if(!this.context)return;this.mobile=root.innerWidth<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);this.fit(true);const count=this.mobile?600:900;if(this.particles.length!==count)this.spawn(count);this.render();this.resume()};
       this.enabled=true;this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context||!this.enabled||!this.onScreen)return;
-        // While the page is being scrolled the snakes hold still, so scrolling gets the whole frame budget.
-        if(now-this.scrolled<150){this.last=0;this.frame=requestAnimationFrame(this.tick);return}
         // Phones run at 30 fps; a frame is skipped only when it comes clearly early, so 60 Hz screens never judder.
         const target=this.mobile?30:60;if(target<50&&this.last&&now-this.last<1000/target*.75){this.frame=requestAnimationFrame(this.tick);return}
         const dt=Math.min(.1,this.last?(now-this.last)/1000:1/60);if(this.last){this.intervals.push(now-this.last);if(this.intervals.length>180)this.intervals.shift()}this.last=now;
@@ -50,7 +48,8 @@
       this.motion=()=>{this.suspend();this.last=0;if(this.reduced.matches){this.activity=0;for(const key of Object.keys(this.bands))this.bands[key]=0;this.settle();this.render()}else this.resume()};
       root.addEventListener('resize',this.resize);if(this.glState){canvas.addEventListener('webglcontextlost',event=>event.preventDefault());canvas.addEventListener('webglcontextrestored',()=>{this.glState=createGl(canvas);this.context=this.glState?.gl||null;this.resize()})}this.reduced.addEventListener?.('change',this.motion);
       // Nothing to draw once the orb has scrolled out of view: the animation stops until it comes back.
-      this.scrolled=0;root.addEventListener('scroll',()=>{this.scrolled=performance.now()},{passive:true});this.onScreen=true;if(this.anchor&&root.IntersectionObserver){new IntersectionObserver(entries=>{this.onScreen=entries.at(-1).isIntersecting;this.onScreen?this.resume():this.suspend()},{rootMargin:'120px'}).observe(this.anchor)}document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.settle();
+      // Scrolling pushes the particles: the canvas moves with the page, so a particle that lags keeps its place on screen for a moment.
+      this.scrollPush=0;let lastScroll=root.scrollY||0;root.addEventListener('scroll',()=>{const y=root.scrollY||0;this.scrollPush+=y-lastScroll;lastScroll=y},{passive:true});this.onScreen=true;if(this.anchor&&root.IntersectionObserver){new IntersectionObserver(entries=>{this.onScreen=entries.at(-1).isIntersecting;this.onScreen?this.resume():this.suspend()},{rootMargin:'120px'}).observe(this.anchor)}document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.settle();
     }
     spawn(count){const old=this.particles;this.particles=Array.from({length:count},(_,i)=>old[i]||{x:rand(0,this.width||800),y:rand(0,this.height||600),vx:0,vy:0,seed:Math.random(),size:rand(.55,1.35),color:i%4});this.cast()}
     // Splits the particles into snakes (head first) and fireflies with their own orbit, speed and colour.
@@ -58,10 +57,18 @@
       this.snakes.forEach((snake,k)=>{snake.dir=k%2?-1:1;snake.orbit=1.12+k*(this.mobile?.11:.16);snake.length=1.1+(k%3)*.35;snake.speed=.8+k*.18;snake.twist=2+k});
       this.particles.forEach((p,i)=>{const k=Math.floor(i/body);if(k<snakes){p.snake=k;p.s=(i%body)/body;p.color=k%4;p.offset=(p.seed-.5)*2}else{p.snake=-1;p.s=0;p.orbit=rand(1.05,2.1);p.angle=rand(0,TAU);p.spin=rand(.04,.16)*(Math.random()<.5?-1:1);p.color=Math.floor(rand(0,4))}})}
     palette(){const colors=PALETTES[this.mood]||PALETTES['Спокойствие'];this.colors=[...colors,'#eaf6ff'].map(hexRgb);if(this.glState){this.sprites=[1];return}const {atlas,cells}=buildAtlas([...colors,'#eaf6ff']);this.atlas=atlas;this.sprites=cells}
-    // Centre and radius of the orb in canvas coordinates; without a visible orb the dance sits in the upper right.
-    locate(){const canvasRect=this.canvas.getBoundingClientRect(),orb=this.anchor?.getBoundingClientRect?.();
-      if(!orb||!orb.width){this.center={x:this.width*(this.mobile?.5:.72),y:Math.min(this.height*.4,300),r:Math.min(this.width,this.height)*.16};return}
-      this.center={x:orb.left+orb.width/2-canvasRect.left,y:orb.top+orb.height/2-canvasRect.top,r:Math.min(orb.width,orb.height)/2}}
+    // The canvas is only a square around the orb, a few orb radii wide, instead of a full-width band: far fewer
+    // pixels to draw every frame. When the orb moves, particles are shifted so nothing jumps on screen.
+    // Without an orb (tests, odd layouts) the canvas keeps its CSS box and the dance sits in the upper right.
+    fit(force){const canvas=this.canvas,orb=this.anchor?.getBoundingClientRect?.();
+      if(!orb||!orb.width){const rect=canvas.getBoundingClientRect();if(force||rect.width!==this.width||rect.height!==this.height)this.setSize(rect.width,rect.height);this.center={x:this.width*(this.mobile?.5:.72),y:Math.min(this.height*.4,300),r:Math.min(this.width,this.height)*.16};return}
+      const r=Math.min(orb.width,orb.height)/2,size=Math.ceil(r*5),parent=(canvas.offsetParent||canvas.parentElement).getBoundingClientRect(),left=Math.round(orb.left+orb.width/2-parent.left-size/2),top=Math.round(orb.top+orb.height/2-parent.top-size/2),box=this.box;
+      if(!force&&box&&box.left===left&&box.top===top&&box.size===size)return;
+      if(box)for(const p of this.particles){p.x-=left-box.left;p.y-=top-box.top}
+      Object.assign(canvas.style,{inset:'auto',left:left+'px',top:top+'px',width:size+'px',height:size+'px'});this.box={left,top,size};
+      if(force||!box||box.size!==size)this.setSize(size,size);this.center={x:size/2,y:size/2,r}}
+    setSize(width,height){const canvas=this.canvas;this.width=Math.max(1,width);this.height=Math.max(1,height);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0)}
+    locate(){this.fit(false)}
     // Where a particle wants to be right now: along its snake's body or on its firefly orbit.
     target(p,t){const {x:cx,y:cy,r}=this.center,bass=this.bands.bass,pulse=this.beatPulse;
       if(p.snake<0){const a=p.angle,rad=r*(p.orbit+Math.sin(this.phase*.7+p.seed*20)*.07+pulse*.08*p.orbit);t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad;return}
@@ -121,6 +128,9 @@
       const tempo=this.activity*(this.bpm/120)*(.7+this.bands.rms*.6);
       for(const snake of this.snakes){const lunge=snake.lunge||0;snake.angle+=snake.dir*dt*(.22+tempo*.9+lunge*6)*snake.speed*pace;snake.lunge=lunge*Math.exp(-dt*7)}
       for(const p of this.particles)if(p.snake<0)p.angle+=dt*p.spin*(1+this.activity*1.5)*pace;
+      // Scroll inertia: tails and fireflies lag behind the swipe and spring back; heads hold on to the ring.
+      if(this.scrollPush){const push=this.scrollPush,limit=this.center.r*.5;this.scrollPush=0;
+        for(const p of this.particles){const lag=p.snake>=0?(.03+Math.pow(p.s,1.5)*.75)*(.4+p.seed*.9):.35+p.seed*.6,move=Math.max(-limit,Math.min(limit,push*lag));if(p.snake>=0)p.oy=Math.max(-limit,Math.min(limit,(p.oy||0)+move));else p.y+=move}}
       // A snake body sits exactly on its arc, so it never cuts across the orb even when frames are slow; only the
       // push of a burst is a spring offset that settles back. Fireflies float loosely after their orbit point.
       const t=[0,0],spring=Math.exp(-dt*6),loose=Math.exp(-dt*3.2),drift=1+this.activity*3+this.bands.high*8;

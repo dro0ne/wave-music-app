@@ -324,3 +324,8 @@ body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-bre
 /* The particles' container had a colour filter left from the old wave picture; on an animated canvas it cost a full repaint every frame. */
 .wavefield{filter:none!important;animation:none!important;-webkit-mask-image:none!important;mask-image:none!important}
 @media(prefers-reduced-motion:reduce){body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:none}}
+/* The particle canvas is now a square placed around the orb by wave-backdrop.js; on phones it is wider than the
+   screen, so the band that holds it clips it instead of widening the page. */
+/* It scrolls with the page: as a fixed layer it stayed put while the orb moved, so the snakes slid off the
+   ring and jumped back on each re-measure. JS places the canvas inside it around the orb. */
+.wavefield,.wavefield.wavefield{position:absolute;inset:0 0 auto 0;width:auto;height:1100px;overflow:hidden;transform:none}
