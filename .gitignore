@@ -3,3 +3,4 @@ server/__pycache__/
 tools/doctor/.venv/
 tools/doctor/.browsers/
 tools/doctor/reports/
+tools/doctor/__pycache__/
