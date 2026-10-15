@@ -1,63 +1,13 @@
 (function(root){
   // Decorative only: receives an existing analyser and never owns playback.
-  // Glowing particles gather into shapes around the wave orb, pulse on the beat and morph between shapes.
+  // Glowing "snakes" circle the wave orb and dance to the music, with loose fireflies drifting around them:
+  // the snakes speed up with the tempo, ripple with the bass and leap off the ring on every beat.
   const TAU=Math.PI*2,rand=(a=0,b=1)=>a+Math.random()*(b-a);
   const PALETTES={'Спокойствие':['#7c6cff','#5b8cff','#9fd8ff','#c7b8ff'],'Энергия':['#ff7a3d','#ffb347','#ffe066','#ff4d6d'],'Мечтательно':['#a46bff','#6f8bff','#ff9be2','#c9b6ff'],'Фокус':['#3fd0c9','#5bc0ff','#b9ff4b','#9ff2e6'],'Романтика':['#ff5fa2','#ff8fc7','#d36bff','#ffc2dc'],'Вечеринка':['#ff4fd8','#7a5cff','#3ddcff','#b9ff4b']};
-  const SHAPES={'Спокойствие':['ring','wave','moon'],'Энергия':['car','bolt','star'],'Мечтательно':['moon','cloud','star'],'Фокус':['sphere','diamond','ring'],'Романтика':['heart','hearts','ring'],'Вечеринка':['dancer','star','dancer']};
-  const DANCE_POSES=[
-    // [left arm up/down angle, left forearm, right arm, right forearm, left thigh, left shin, right thigh, right shin, hip sway]
-    [-2.4,-.6,-.7,.5,.25,.1,-.2,.15,0],[-.6,.4,-2.5,-.5,.05,.4,-.35,-.1,.08],[-2.7,-.3,-2.7,.3,.3,-.2,-.3,.2,0],[-1.2,-1.3,-.4,.9,-.1,.6,-.3,.1,-.08],
-    [-.3,.8,-2.2,-.9,.4,.0,-.05,.5,.06],[-2.2,.7,-1.0,-1.2,.15,.2,-.45,.3,-.05],[-1.6,-.8,-1.6,.8,.35,.35,-.35,.35,0],[-2.9,.2,-.5,1.1,-.25,.5,.2,.1,.1]
-  ];
-  // Every shape is drawn once into a small offscreen canvas and sampled into points in the range -1..1.
-  function drawShape(ctx,name,s,pose){
-    const c=s/2;ctx.fillStyle='#fff';ctx.strokeStyle='#fff';ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
-    const heart=(x,y,r)=>{ctx.moveTo(x,y+r*.95);ctx.bezierCurveTo(x-r*1.6,y-r*.1,x-r*.9,y-r*1.25,x,y-r*.45);ctx.bezierCurveTo(x+r*.9,y-r*1.25,x+r*1.6,y-r*.1,x,y+r*.95)};
-    if(name==='heart'){heart(c,c+s*.04,s*.42);ctx.fill()}
-    else if(name==='hearts'){heart(c-s*.16,c+s*.02,s*.27);heart(c+s*.17,c+s*.08,s*.22);ctx.fill()}
-    else if(name==='ring'){ctx.lineWidth=s*.07;ctx.arc(c,c,s*.4,0,TAU);ctx.stroke();ctx.beginPath();ctx.lineWidth=s*.025;ctx.arc(c,c,s*.27,0,TAU);ctx.stroke()}
-    else if(name==='sphere'){ctx.lineWidth=s*.022;for(let i=0;i<5;i++){ctx.beginPath();ctx.ellipse(c,c,s*.42*Math.abs(Math.cos(i/5*Math.PI)),s*.42,0,0,TAU);ctx.stroke()}for(let i=1;i<5;i++){ctx.beginPath();let y=c-s*.42+i*s*.168,w=Math.sqrt(Math.max(0,(s*.42)**2-(y-c)**2));ctx.ellipse(c,y,w,w*.18,0,0,TAU);ctx.stroke()}}
-    else if(name==='diamond'){ctx.moveTo(c,c-s*.45);ctx.lineTo(c+s*.34,c-s*.12);ctx.lineTo(c,c+s*.45);ctx.lineTo(c-s*.34,c-s*.12);ctx.closePath();ctx.lineWidth=s*.05;ctx.stroke();ctx.beginPath();ctx.moveTo(c-s*.34,c-s*.12);ctx.lineTo(c+s*.34,c-s*.12);ctx.moveTo(c,c-s*.45);ctx.lineTo(c,c+s*.45);ctx.lineWidth=s*.02;ctx.stroke()}
-    else if(name==='star'){for(let i=0;i<10;i++){let r=i%2?s*.19:s*.46,a=i/10*TAU-Math.PI/2;ctx[i?'lineTo':'moveTo'](c+Math.cos(a)*r,c+Math.sin(a)*r)}ctx.closePath();ctx.fill()}
-    else if(name==='moon'){ctx.arc(c,c,s*.4,0,TAU);ctx.fill();ctx.globalCompositeOperation='destination-out';ctx.beginPath();ctx.arc(c+s*.17,c-s*.1,s*.34,0,TAU);ctx.fill();ctx.globalCompositeOperation='source-over'}
-    else if(name==='cloud'){[[-.2,.05,.2],[0,-.08,.25],[.22,.04,.19],[.06,.1,.2],[-.32,.12,.12],[.36,.12,.12]].forEach(([x,y,r])=>{ctx.moveTo(c+x*s+r*s,c+y*s);ctx.arc(c+x*s,c+y*s,r*s,0,TAU)});ctx.fill()}
-    else if(name==='wave'){ctx.lineWidth=s*.05;for(let k=0;k<3;k++){ctx.beginPath();for(let x=0;x<=s;x+=2){let y=c+(k-1)*s*.17+Math.sin(x/s*TAU*1.5+k)*s*.09;x?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke()}}
-    else if(name==='bolt'){[[.58,.03],[.24,.53],[.47,.53],[.36,.97],[.78,.4],[.53,.4],[.7,.03]].forEach(([x,y],i)=>ctx[i?'lineTo':'moveTo'](x*s,y*s));ctx.closePath();ctx.fill()}
-    else if(name==='car'){
-      // A sleek sedan in profile, nose to the left: long hood, sloped roof, short trunk.
-      // Headlights are painted cyan and taillights red, so their particles can glow in their own colours.
-      const P=(x,y)=>[x*s,y*s],path=points=>{ctx.beginPath();points.forEach(([x,y],i)=>ctx[i?'lineTo':'moveTo'](x*s,y*s));ctx.closePath()};
-      ctx.beginPath();ctx.moveTo(...P(.05,.6));ctx.lineTo(...P(.035,.535));ctx.quadraticCurveTo(...P(.04,.49),...P(.09,.48));ctx.quadraticCurveTo(...P(.22,.455),...P(.34,.44));ctx.quadraticCurveTo(...P(.4,.36),...P(.47,.31));ctx.quadraticCurveTo(...P(.56,.285),...P(.65,.295));ctx.quadraticCurveTo(...P(.75,.33),...P(.83,.405));ctx.lineTo(...P(.93,.415));ctx.quadraticCurveTo(...P(.965,.45),...P(.96,.53));ctx.lineTo(...P(.945,.6));ctx.closePath();ctx.fill();
-      ctx.globalCompositeOperation='destination-out';
-      path([[.37,.435],[.465,.335],[.555,.318],[.555,.432]]);ctx.fill();path([[.575,.432],[.575,.318],[.65,.322],[.765,.405],[.74,.432]]);ctx.fill();
-      [.215,.775].forEach(x=>{ctx.beginPath();ctx.arc(x*s,.6*s,.098*s,0,TAU);ctx.fill()});
-      ctx.lineWidth=s*.008;ctx.beginPath();ctx.moveTo(...P(.56,.45));ctx.lineTo(...P(.565,.585));ctx.moveTo(...P(.1,.515));ctx.quadraticCurveTo(...P(.5,.49),...P(.94,.47));ctx.stroke();
-      ctx.globalCompositeOperation='source-over';
-      ctx.beginPath();ctx.ellipse(...P(.385,.448),.022*s,.013*s,0,0,TAU);ctx.fill();
-      [.215,.775].forEach(x=>{const [cx,cy]=P(x,.6);ctx.beginPath();ctx.lineWidth=s*.024;ctx.arc(cx,cy,.072*s,0,TAU);ctx.stroke();ctx.lineWidth=s*.012;for(let k=0;k<5;k++){const a=k/5*TAU;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*.064*s,cy+Math.sin(a)*.064*s);ctx.stroke()}ctx.beginPath();ctx.arc(cx,cy,.018*s,0,TAU);ctx.fill()});
-      ctx.fillStyle='#00ffff';path([[.045,.5],[.12,.478],[.145,.49],[.06,.522]]);ctx.fill();ctx.fillRect(.05*s,.548*s,.06*s,.01*s);
-      ctx.fillStyle='#ff0000';path([[.905,.418],[.955,.432],[.958,.458],[.9,.45]]);ctx.fill();ctx.fillStyle='#fff'}
-    else if(name==='dancer'){
-      const [la,lf,ra,rf,lt,ls,rt,rs,sway]=pose||DANCE_POSES[0],hip=[c+sway*s,c+s*.1],neck=[c+sway*s*.4,c-s*.2],limb=(from,angle,len)=>[from[0]+Math.cos(angle+Math.PI/2)*len*s,from[1]+Math.sin(angle+Math.PI/2)*len*s],line=(points,w)=>{ctx.beginPath();ctx.lineWidth=w*s;points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p[0],p[1]));ctx.stroke()};
-      line([hip,neck],.075);ctx.beginPath();ctx.arc(neck[0],neck[1]-s*.09,s*.065,0,TAU);ctx.fill();
-      ctx.beginPath();ctx.moveTo(neck[0]+s*.04,neck[1]-s*.12);ctx.quadraticCurveTo(neck[0]+s*.15,neck[1]-s*.05,neck[0]+s*.11+sway*s,neck[1]+s*.08);ctx.lineWidth=s*.03;ctx.stroke();
-      const shoulder=[neck[0],neck[1]+s*.02],le=limb(shoulder,la,.15),re=limb(shoulder,-ra,.15);line([shoulder,le,limb(le,la+lf,.13)],.035);line([shoulder,re,limb(re,-ra-rf,.13)],.035);
-      ctx.beginPath();ctx.moveTo(hip[0]-s*.05,hip[1]-s*.04);ctx.lineTo(hip[0]+s*.05,hip[1]-s*.04);ctx.lineTo(hip[0]+s*.14,hip[1]+s*.11);ctx.lineTo(hip[0]-s*.14,hip[1]+s*.11);ctx.closePath();ctx.fill();
-      const lk=limb(hip,lt,.17),rk=limb(hip,-rt,.17);line([hip,lk,limb(lk,lt+ls,.17)],.042);line([hip,rk,limb(rk,-rt-rs,.17)],.042)}
-  }
-  const FIGURES=['dancer','car'],shapeCache=new Map();
-  function sampleShape(name,count,pose,poseIndex=0){
-    const key=`${name}:${count}:${poseIndex}`;if(shapeCache.has(key))return shapeCache.get(key);
-    const size=160,canvas=document.createElement('canvas');canvas.width=canvas.height=size;const ctx=canvas.getContext('2d',{willReadFrequently:true});drawShape(ctx,name,size,pose);
-    const data=ctx.getImageData(0,0,size,size).data,filled=(x,y)=>x>=0&&y>=0&&x<size&&y<size&&data[(y*size+x)*4+3]>128,accent=(x,y)=>{const i=(y*size+x)*4;return data[i]<120&&data[i+2]>180?1:data[i]>180&&data[i+1]<120?2:0},edges=[],inside=[];
-    for(let y=0;y<size;y+=1)for(let x=0;x<size;x+=1){if(!filled(x,y))continue;(filled(x-2,y)&&filled(x+2,y)&&filled(x,y-2)&&filled(x,y+2)?inside:edges).push([x,y])}
-    // Outlines get most particles so the shape reads clearly even behind the orb.
-    const points=[],pick=list=>list[Math.floor(Math.random()*list.length)];
-    // Small glowing details (headlights, taillights) get extra particles so they read as lights.
-    const lights=[...edges,...inside].filter(([x,y])=>accent(x,y)),fill=name==='car'?.82:.62;
-    for(let i=0;i<count;i++){const p=lights.length&&Math.random()<.09?pick(lights):(inside.length&&Math.random()>fill)||!edges.length?pick(inside.length?inside:edges):pick(edges);points.push(p?[(p[0]+Math.random()-size/2)/(size/2),(p[1]+Math.random()-size/2)/(size/2),accent(p[0],p[1])]:[0,0,0])}
-    shapeCache.set(key,points);return points;
-  }
+  // How many snakes circle the orb and how lively they move for each mood.
+  const MOTION={'Спокойствие':{snakes:2,pace:.7},'Фокус':{snakes:2,pace:.6},'Мечтательно':{snakes:3,pace:.85},'Романтика':{snakes:2,pace:.8},'Энергия':{snakes:3,pace:1.3},'Вечеринка':{snakes:4,pace:1.45}};
+  // Share of particles in the snakes; the rest are fireflies.
+  const SNAKE_SHARE=.72;
   // All glow sprites (colour x size step x brightness step) live in one atlas image, so a frame is a run of plain
   // copies from a single texture: no per-particle scaling, alpha changes or texture switches.
   const SIZES=[3,5,7,9,12,15,19,24],ALPHAS=[.45,.7,1],CELL=26;
@@ -86,8 +36,8 @@
     constructor(canvas,readAnalyser,options={}){
       this.canvas=canvas;this.glState=options.renderer==='2d'||!canvas?null:createGl(canvas);this.context=this.glState?this.glState.gl:canvas?.getContext('2d');this.readAnalyser=readAnalyser;this.readBpm=options.readBpm||(()=>90);this.anchor=options.anchor||null;
       this.state='IDLE';this.mood='Спокойствие';this.frame=0;this.last=0;this.phase=0;this.activity=0;this.bands={bass:0,mid:0,high:0,rms:0};this.frames=0;this.costs=[];this.intervals=[];this.reduced=root.matchMedia('(prefers-reduced-motion: reduce)');
-      this.particles=[];this.shapeIndex=0;this.shapeName=null;this.poseIndex=0;this.beats=0;this.beatPulse=0;this.kick=0;this.beatClock=0;this.bpm=90;this.flux=[];this.onsets=[];this.lastOnset=0;this.period=0;this.nextBeatAt=0;this.locked=false;this.morph=1;this.morphSpeed=2;this.quality=1;this.sprites=[];this.center={x:0,y:0,r:100};
-      this.resize=()=>{if(!this.context)return;const rect=canvas.getBoundingClientRect();this.width=Math.max(1,rect.width);this.height=Math.max(1,rect.height);this.mobile=this.width<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0);const count=this.mobile?900:1600;if(this.particles.length!==count)this.spawn(count);this.locate();this.render();this.resume()};
+      this.particles=[];this.snakes=[];this.beats=0;this.beatPulse=0;this.kick=0;this.beatClock=0;this.bpm=90;this.flux=[];this.onsets=[];this.lastOnset=0;this.period=0;this.nextBeatAt=0;this.locked=false;this.quality=1;this.sprites=[];this.center={x:0,y:0,r:100};
+      this.resize=()=>{if(!this.context)return;const rect=canvas.getBoundingClientRect();this.width=Math.max(1,rect.width);this.height=Math.max(1,rect.height);this.mobile=this.width<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0);const count=this.mobile?600:900;if(this.particles.length!==count)this.spawn(count);this.locate();this.render();this.resume()};
       this.enabled=true;this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context||!this.enabled)return;
         // Phones run at 30 fps; a frame is skipped only when it comes clearly early, so 60 Hz screens never judder.
         const target=this.mobile?30:60;if(target<50&&this.last&&now-this.last<1000/target*.75){this.frame=requestAnimationFrame(this.tick);return}
@@ -96,41 +46,38 @@
         if(this.frames%60===0){if(this.cost>9)this.quality=Math.max(.4,this.quality*.9);else if(this.cost<5)this.quality=Math.min(1,this.quality*1.04)}
         this.frames++;this.frame=requestAnimationFrame(this.tick)};
       this.motion=()=>{this.suspend();this.last=0;if(this.reduced.matches){this.activity=0;for(const key of Object.keys(this.bands))this.bands[key]=0;this.settle();this.render()}else this.resume()};
-      root.addEventListener('resize',this.resize);if(this.glState){canvas.addEventListener('webglcontextlost',event=>event.preventDefault());canvas.addEventListener('webglcontextrestored',()=>{this.glState=createGl(canvas);this.context=this.glState?.gl||null;this.resize()})}this.reduced.addEventListener?.('change',this.motion);document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.nextShape(true);this.prewarm();if(this.reduced.matches)this.settle();
+      root.addEventListener('resize',this.resize);if(this.glState){canvas.addEventListener('webglcontextlost',event=>event.preventDefault());canvas.addEventListener('webglcontextrestored',()=>{this.glState=createGl(canvas);this.context=this.glState?.gl||null;this.resize()})}this.reduced.addEventListener?.('change',this.motion);document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.settle();
     }
-    spawn(count){const old=this.particles;this.particles=Array.from({length:count},(_,i)=>old[i]||{x:rand(0,this.width||800),y:rand(0,this.height||600),vx:0,vy:0,tx:0,ty:0,seed:Math.random(),size:rand(.55,1.35),color:i%4});if(this.targets)this.assign(this.targets)}
-    palette(){const colors=PALETTES[this.mood]||PALETTES['Спокойствие'];this.colors=[...colors,'#eaf6ff','#ff3a4a'].map(hexRgb);if(this.glState){this.sprites=[1];this.platform=null;if(this.particles.length)this.prewarm();return}const {atlas,cells}=buildAtlas([...colors,'#eaf6ff','#ff3a4a']);this.atlas=atlas;this.sprites=cells;
-      const platform=document.createElement('canvas');platform.width=256;platform.height=56;const g=platform.getContext('2d'),grad=g.createRadialGradient(128,128,0,128,128,128);grad.addColorStop(0,colors[0]+'aa');grad.addColorStop(.35,colors[0]+'33');grad.addColorStop(1,colors[0]+'00');g.setTransform(1,0,0,.22,0,0);g.fillStyle=grad;g.fillRect(0,0,256,256);this.platform=platform;if(this.particles.length)this.prewarm()}
-    // Samples the mood's shapes and all dancer poses while the browser is idle, so a shape change never stalls a frame.
-    prewarm(){const idle=root.requestIdleCallback?fn=>root.requestIdleCallback(fn,{timeout:600}):fn=>setTimeout(fn,200),shapes=this.shapes(),jobs=[...shapes.filter(x=>x!=='dancer').map(x=>[x,null,0]),...(shapes.includes('dancer')?DANCE_POSES.map((pose,i)=>['dancer',pose,i]):[])],count=this.particles.length,next=()=>{const job=jobs.shift();if(!job||count!==this.particles.length)return;sampleShape(job[0],count,job[1],job[2]);idle(next)};idle(next)}
-    // The figure is centred on the orb when it is visible, otherwise on the right part of the hero.
-    // Outline shapes frame the orb. Figures (dancer, car) would hide behind it, so on wide screens they stand beside it.
-    locate(){const canvasRect=this.canvas.getBoundingClientRect(),orb=this.anchor?.getBoundingClientRect?.(),figure=FIGURES.includes(this.shapeName);
-      if(!orb||!orb.width){this.center={x:this.width*(this.mobile?.5:.72),y:Math.min(this.height*.4,300),r:Math.min(this.width,this.height)*.3};return}
-      const size=Math.min(orb.width,orb.height),x=orb.left+orb.width/2-canvasRect.left,y=orb.top+orb.height/2-canvasRect.top,
-        // Shapes reach about half their radius from the centre; keep them clear of the faded top edge of the canvas.
-        fit=(cy,r)=>Math.min(r,Math.max(size*.9,(cy-this.height*.1)/.5));
-      if(figure&&!this.mobile){const car=this.shapeName==='car',cy=y+size*(car?.32:.1);this.center={x:orb.left-canvasRect.left-size*(car?.38:.42),y:cy,r:car?size*.6:fit(cy,size*1.45)}}
-      else this.center={x,y,r:this.shapeName==='car'?size*.68:fit(y,size*(this.mobile?(figure?1.55:1.25):1.6))}}
-    shapes(){return SHAPES[this.mood]||SHAPES['Спокойствие']}
-    nextShape(initial=false,slow=false){
-      const list=this.shapes();if(!initial)this.shapeIndex=(this.shapeIndex+1)%list.length;const name=list[this.shapeIndex%list.length];this.shapeName=name;this.poseIndex=0;this.locate();
-      this.targets=sampleShape(name,this.particles.length,name==='dancer'?DANCE_POSES[0]:null,0);this.assign(this.targets);this.morph=0;this.morphSpeed=slow?.45:1.4;
-      if(!initial&&!slow)this.burst(.9);
-    }
-    nextPose(){this.poseIndex=(this.poseIndex+1)%DANCE_POSES.length;this.targets=sampleShape('dancer',this.particles.length,DANCE_POSES[this.poseIndex],this.poseIndex);this.assign(this.targets);this.morph=.7;this.morphSpeed=6}
-    assign(points){this.particles.forEach((p,i)=>{const t=points[i%points.length];p.tx=t[0];p.ty=t[1];p.accent=t[2]||0})}
-    settle(){this.locate();this.particles.forEach(p=>{p.x=this.center.x+p.tx*this.center.r;p.y=this.center.y+p.ty*this.center.r;p.vx=p.vy=0});this.morph=1}
-    burst(strength){const {x,y}=this.center;for(const p of this.particles){const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy)||1,force=strength*rand(90,260);p.vx+=dx/d*force-dy/d*force*.35;p.vy+=dy/d*force+dx/d*force*.35}}
-    // Called by the app when a new track starts: the figure slowly flows into the next shape and the tempo eases over.
-    trackChanged(bpm){if(Number(bpm)>0)this.targetBpm=Number(bpm);this.onsets=[];this.locked=false;this.nextShape(false,true)}
+    spawn(count){const old=this.particles;this.particles=Array.from({length:count},(_,i)=>old[i]||{x:rand(0,this.width||800),y:rand(0,this.height||600),vx:0,vy:0,seed:Math.random(),size:rand(.55,1.35),color:i%4});this.cast()}
+    // Splits the particles into snakes (head first) and fireflies with their own orbit, speed and colour.
+    cast(){const motion=MOTION[this.mood]||MOTION['Спокойствие'],snakes=motion.snakes,body=Math.floor(this.particles.length*SNAKE_SHARE/snakes);this.snakes=Array.from({length:snakes},(_,k)=>this.snakes?.[k]||{angle:rand(0,TAU)});
+      this.snakes.forEach((snake,k)=>{snake.dir=k%2?-1:1;snake.orbit=1.12+k*(this.mobile?.11:.16);snake.length=1.1+(k%3)*.35;snake.speed=.8+k*.18;snake.twist=2+k});
+      this.particles.forEach((p,i)=>{const k=Math.floor(i/body);if(k<snakes){p.snake=k;p.s=(i%body)/body;p.color=k%4;p.offset=(p.seed-.5)*2}else{p.snake=-1;p.s=0;p.orbit=rand(1.05,2.1);p.angle=rand(0,TAU);p.spin=rand(.04,.16)*(Math.random()<.5?-1:1);p.color=Math.floor(rand(0,4))}})}
+    palette(){const colors=PALETTES[this.mood]||PALETTES['Спокойствие'];this.colors=[...colors,'#eaf6ff'].map(hexRgb);if(this.glState){this.sprites=[1];return}const {atlas,cells}=buildAtlas([...colors,'#eaf6ff']);this.atlas=atlas;this.sprites=cells}
+    // Centre and radius of the orb in canvas coordinates; without a visible orb the dance sits in the upper right.
+    locate(){const canvasRect=this.canvas.getBoundingClientRect(),orb=this.anchor?.getBoundingClientRect?.();
+      if(!orb||!orb.width){this.center={x:this.width*(this.mobile?.5:.72),y:Math.min(this.height*.4,300),r:Math.min(this.width,this.height)*.16};return}
+      this.center={x:orb.left+orb.width/2-canvasRect.left,y:orb.top+orb.height/2-canvasRect.top,r:Math.min(orb.width,orb.height)/2}}
+    // Where a particle wants to be right now: along its snake's body or on its firefly orbit.
+    target(p,t){const {x:cx,y:cy,r}=this.center,bass=this.bands.bass,pulse=this.beatPulse;
+      if(p.snake<0){const a=p.angle,rad=r*(p.orbit+Math.sin(this.phase*.7+p.seed*20)*.07+pulse*.08*p.orbit);t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad;return}
+      const snake=this.snakes[p.snake],s=p.s,a=snake.angle-snake.dir*s*snake.length*(1+this.activity*.25),
+        // The body sways, a bass wave runs from head to tail and each beat lifts the head off the ring.
+        sway=Math.sin(a*snake.twist+this.phase*2.2+p.snake)*.07,ripple=Math.sin(s*TAU*2-this.phase*7)*bass*.1*(1-s*.5),leap=pulse*.22*Math.max(0,1-s*1.8),
+        rad=r*(snake.orbit+sway+ripple+leap)+p.offset*r*.045*(1-s*.75);
+      t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad}
+    settle(){this.locate();const t=[0,0];this.particles.forEach(p=>{this.target(p,t);p.x=t[0];p.y=t[1];p.vx=p.vy=p.ox=p.oy=0})}
+    burst(strength){const {x,y}=this.center;for(const p of this.particles){const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy)||1,force=strength*rand(60,160);p.vx+=dx/d*force;p.vy+=dy/d*force}}
+    // Called by the app when a new track starts: the snakes scatter a little and the tempo eases over.
+    trackChanged(bpm){if(Number(bpm)>0)this.targetBpm=Number(bpm);this.onsets=[];this.locked=false;this.burst(.5)}
     setState(state){if(this.state!==state){this.costs=[];this.intervals=[];this.last=0}this.state=state;this.resume()}
-    setMood(mood){if(mood===this.mood)return;this.mood=mood;this.palette();this.shapeIndex=-1;this.nextShape(false,true);this.render()}
+    setMood(mood){if(mood===this.mood)return;this.mood=mood;this.palette();this.cast();this.burst(.4);this.render()}
     suspend(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.last=0}
     resume(){if(!this.context||!this.enabled||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
     // The particles can be switched off in settings; the canvas is hidden and stops drawing entirely.
     setEnabled(on){this.enabled=!!on;if(this.canvas)this.canvas.hidden=!this.enabled;if(this.enabled){this.last=0;this.resume()}else this.suspend()}
-    beat(strength){this.beats++;this.beatPulse=Math.min(1.3,.7+strength*.6);this.kick=1;const dancer=this.shapeName==='dancer';if(!FIGURES.includes(this.shapeName))this.burst(.06+strength*.12);if(dancer)this.nextPose();if(this.beats%(dancer?32:16)===0)this.nextShape()}
+    // On every beat the snakes lunge forward and their heads leap off the ring.
+    beat(strength){this.beats++;this.beatPulse=Math.min(1.3,.7+strength*.6);this.kick=1;for(const snake of this.snakes)snake.lunge=(snake.lunge||0)+.18+strength*.22}
     // Reads the analyser. Beats are found from sudden rises of low-frequency energy (spectral flux), not from its level:
     // loud modern masters keep the bass level near the top all the time, so a level threshold never fires.
     listen(analyser,targets,now){
@@ -163,34 +110,39 @@
       if(this.locked&&now-this.lastOnset>4000)this.locked=false;
       if(playing&&this.locked){if(now>=this.nextBeatAt){while(this.nextBeatAt<=now)this.nextBeatAt+=this.period;this.bpm=60000/this.period;this.beat(this.hit??.5);this.hit=.35}}
       else if(playing&&!analyser){this.beatClock+=dt*this.bpm/60;if(this.beatClock>=1){this.beatClock%=1;this.beat(.45)}}
-      else if(!playing){this.beatClock+=dt/4;if(this.beatClock>=1){this.beatClock%=1;this.beats+=1;if(this.beats%3===0)this.nextShape(false,true)}}
-      this.beatPulse=smooth(this.beatPulse,0,.05,.16);this.kick=smooth(this.kick,0,.05,.09);this.morph=Math.min(1,this.morph+dt*this.morphSpeed);
-      const lively=['Энергия','Вечеринка'].includes(this.mood)?1.25:['Фокус','Спокойствие'].includes(this.mood)?.75:1;this.phase+=dt*(.25+this.activity*.6)*lively;
+      this.beatPulse=smooth(this.beatPulse,0,.05,.16);this.kick=smooth(this.kick,0,.05,.09);
+      const pace=(MOTION[this.mood]||MOTION['Спокойствие']).pace;this.phase+=dt*(.25+this.activity*.6)*pace;
       if(this.frames%30===0)this.locate();
-      const figure=FIGURES.includes(this.shapeName),car=this.shapeName==='car',cx=this.center.x,cy=this.center.y+(car?Math.sin(this.kick*Math.PI)*this.center.r*.035:0),r=this.center.r*(1+this.beatPulse*(figure?.04:.1)+this.bands.rms*.04),stiffness=(4+this.morph*18+this.activity*8)*(this.morphSpeed<1?.55:figure?1.6:1),damping=Math.exp(-dt*(this.morphSpeed<1?2.4:figure?6:3.6)),drift=(2+this.activity*6+this.bands.high*14)*(figure?.3:1);
-      for(const p of this.particles){const wobble=Math.sin(this.phase*2+p.seed*40)*drift,tx=cx+p.tx*r+wobble,ty=cy+p.ty*r+Math.cos(this.phase*1.7+p.seed*31)*drift;p.vx=(p.vx+(tx-p.x)*stiffness*dt)*damping;p.vy=(p.vy+(ty-p.y)*stiffness*dt)*damping;p.x+=p.vx*dt;p.y+=p.vy*dt}
+      // Idle: a slow glide. Playing: the orbit follows the tempo and the loudness, plus the lunges left by beats.
+      const tempo=this.activity*(this.bpm/120)*(.7+this.bands.rms*.6);
+      for(const snake of this.snakes){const lunge=snake.lunge||0;snake.angle+=snake.dir*dt*(.22+tempo*.9+lunge*6)*snake.speed*pace;snake.lunge=lunge*Math.exp(-dt*7)}
+      for(const p of this.particles)if(p.snake<0)p.angle+=dt*p.spin*(1+this.activity*1.5)*pace;
+      // A snake body sits exactly on its arc, so it never cuts across the orb even when frames are slow; only the
+      // push of a burst is a spring offset that settles back. Fireflies float loosely after their orbit point.
+      const t=[0,0],spring=Math.exp(-dt*6),loose=Math.exp(-dt*3.2),drift=1+this.activity*3+this.bands.high*8;
+      for(const p of this.particles){this.target(p,t);
+        if(p.snake>=0){p.ox=((p.ox||0)+p.vx*dt);p.oy=((p.oy||0)+p.vy*dt);p.vx=(p.vx-p.ox*40*dt)*spring;p.vy=(p.vy-p.oy*40*dt)*spring;p.x=t[0]+p.ox;p.y=t[1]+p.oy;continue}
+        const dx=Math.sin(this.phase*2+p.seed*40)*drift,dy=Math.cos(this.phase*1.7+p.seed*31)*drift;
+        p.vx=(p.vx+(t[0]+dx-p.x)*9*dt)*loose;p.vy=(p.vy+(t[1]+dy-p.y)*9*dt)*loose;p.x+=p.vx*dt;p.y+=p.vy*dt}
     }
+    // Heads are big and bright, tails fade out; fireflies twinkle with the high end.
+    look(p){if(p.snake>=0){const taper=1-p.s;return {size:(.55+taper*.85)*(1+this.beatPulse*.5*taper),alpha:.25+taper*.6+this.beatPulse*.25*taper,white:p.s<.03}}
+      const flicker=.55+.45*Math.sin(this.phase*6+p.seed*90);return {size:.75*(1+this.bands.high*.6*flicker),alpha:.25+flicker*.45+this.activity*.1,white:false}}
     render(){
       if(this.glState)return this.renderGl();
       if(!this.context)return;const ctx=this.context;ctx.clearRect(0,0,this.width,this.height);if(!this.sprites.length)return;
-      const {x:cx,y:cy,r}=this.center,energy=this.activity,glow=.25+energy*.25+this.beatPulse*.5;
-      // A soft glowing "platform" under the figure, like a stage light; pre-rendered once per mood.
-      ctx.globalAlpha=Math.min(1,glow);ctx.drawImage(this.platform,cx-r,cy+r*1.12-r*.22,r*2,r*.44);ctx.globalAlpha=1;
-      ctx.globalCompositeOperation='lighter';const twinkle=this.bands.high,scale=this.mobile?5:6.5;
-      const visible=Math.round(this.particles.length*this.quality),last=SIZES.length-1,atlas=this.atlas;for(let i=0;i<visible;i++){const p=this.particles[i],flicker=.55+.45*Math.sin(this.phase*6+p.seed*90),size=scale*p.size*(1+this.beatPulse*.55+twinkle*.4*flicker),alpha=.5+energy*.2+flicker*.25+this.beatPulse*.3,step=size<4?0:size<6?1:size<8?2:size<10.5?3:size<13.5?4:size<17?5:size<21.5?6:last,[sx,sy,sw]=p.accent?this.sprites[3+p.accent][Math.min(last,step+1)][2]:this.sprites[p.color][step][alpha<.62?0:alpha<.88?1:2],half=sw>>1;ctx.drawImage(atlas,sx,sy,sw,sw,(p.x-half)|0,(p.y-half)|0,sw,sw)}
-      ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+      ctx.globalCompositeOperation='lighter';const scale=this.mobile?5:6.5,visible=Math.round(this.particles.length*this.quality),last=SIZES.length-1,atlas=this.atlas;
+      for(let i=0;i<visible;i++){const p=this.particles[i],look=this.look(p),size=scale*p.size*look.size,step=size<4?0:size<6?1:size<8?2:size<10.5?3:size<13.5?4:size<17?5:size<21.5?6:last,[sx,sy,sw]=this.sprites[look.white?4:p.color][step][look.alpha<.5?0:look.alpha<.8?1:2],half=sw>>1;ctx.drawImage(atlas,sx,sy,sw,sw,(p.x-half)|0,(p.y-half)|0,sw,sw)}
+      ctx.globalCompositeOperation='source-over';
     }
     renderGl(){
       const state=this.glState,gl=state.gl;if(gl.isContextLost())return;gl.clear(gl.COLOR_BUFFER_BIT);if(!this.colors)return;
-      const {x:cx,y:cy,r}=this.center,energy=this.activity,twinkle=this.bands.high,scale=(this.mobile?5:6.5)*1.25,visible=Math.round(this.particles.length*this.quality),platform=24,total=visible+platform;
-      if(!state.data||state.data.length<total*FLOATS)state.data=new Float32Array(total*FLOATS*1.25|0);const data=state.data,maxPoint=state.maxPoint/this.ratio;let o=0;
-      // The stage-light "platform" under the figure: a row of large, faint glows.
-      const glow=.25+energy*.25+this.beatPulse*.5,base=this.colors[0];for(let i=0;i<platform;i++){const u=i/(platform-1)*2-1;data[o++]=cx+u*r*.8;data[o++]=cy+r*1.12;data[o++]=Math.min(maxPoint,r*(.42-Math.abs(u)*.22));data[o++]=base[0];data[o++]=base[1];data[o++]=base[2];data[o++]=glow*.16*(1-Math.abs(u)*.6)}
-      for(let i=0;i<visible;i++){const p=this.particles[i],flicker=.55+.45*Math.sin(this.phase*6+p.seed*90),size=scale*p.size*(1+this.beatPulse*.55+twinkle*.4*flicker)*(p.accent?1.5:1),alpha=Math.min(1,(.5+energy*.2+flicker*.25+this.beatPulse*.3)*.75),c=this.colors[p.accent?3+p.accent:p.color];
-        data[o++]=p.x;data[o++]=p.y;data[o++]=Math.min(maxPoint,size);data[o++]=c[0];data[o++]=c[1];data[o++]=c[2];data[o++]=p.accent?1:alpha}
-      gl.uniform2f(state.view,this.width,this.height);gl.uniform1f(state.ratio,this.ratio);gl.bufferData(gl.ARRAY_BUFFER,data.subarray(0,o),gl.DYNAMIC_DRAW);gl.drawArrays(gl.POINTS,0,total);
+      const scale=(this.mobile?5:6.5)*1.25,visible=Math.round(this.particles.length*this.quality);
+      if(!state.data||state.data.length<visible*FLOATS)state.data=new Float32Array(visible*FLOATS*1.25|0);const data=state.data,maxPoint=state.maxPoint/this.ratio;let o=0;
+      for(let i=0;i<visible;i++){const p=this.particles[i],look=this.look(p),c=this.colors[look.white?4:p.color];data[o++]=p.x;data[o++]=p.y;data[o++]=Math.min(maxPoint,scale*p.size*look.size);data[o++]=c[0];data[o++]=c[1];data[o++]=c[2];data[o++]=Math.min(1,look.alpha)}
+      gl.uniform2f(state.view,this.width,this.height);gl.uniform1f(state.ratio,this.ratio);gl.bufferData(gl.ARRAY_BUFFER,data.subarray(0,o),gl.DYNAMIC_DRAW);gl.drawArrays(gl.POINTS,0,visible);
     }
-    debug(){const average=list=>list.length?list.reduce((a,b)=>a+b,0)/list.length:0;return {renderer:this.glState?'webgl':'2d',locked:this.locked,period:Math.round(this.period),onsets:this.onsets.length,state:this.state,mode:this.state==='PLAYING'&&this.readAnalyser()?'analyser':'procedural',shape:this.shapeName,pose:this.poseIndex,beats:this.beats,bpm:+this.bpm.toFixed(1),particles:this.particles.length,reducedMotion:this.reduced.matches,hidden:document.hidden,running:!!this.frame,frames:this.frames,canvas:{width:this.canvas.width,height:this.canvas.height,ratio:this.ratio,mobile:this.mobile},averageDrawMs:+average(this.costs).toFixed(2),quality:+this.quality.toFixed(2),observedFps:+(1000/(average(this.intervals)||Infinity)).toFixed(1),activity:+this.activity.toFixed(3),bands:{...this.bands}}}
+    debug(){const average=list=>list.length?list.reduce((a,b)=>a+b,0)/list.length:0;return {renderer:this.glState?'webgl':'2d',locked:this.locked,period:Math.round(this.period),onsets:this.onsets.length,state:this.state,mode:this.state==='PLAYING'&&this.readAnalyser()?'analyser':'procedural',snakes:this.snakes.length,beats:this.beats,bpm:+this.bpm.toFixed(1),particles:this.particles.length,reducedMotion:this.reduced.matches,hidden:document.hidden,running:!!this.frame,frames:this.frames,canvas:{width:this.canvas.width,height:this.canvas.height,ratio:this.ratio,mobile:this.mobile},averageDrawMs:+average(this.costs).toFixed(2),quality:+this.quality.toFixed(2),observedFps:+(1000/(average(this.intervals)||Infinity)).toFixed(1),activity:+this.activity.toFixed(3),bands:{...this.bands}}}
   }
   root.WaveBackdrop=WaveBackdrop;
 })(window);
