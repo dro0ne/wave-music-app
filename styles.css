@@ -268,3 +268,15 @@ html{overflow-x:clip}
 .orb-core{background:radial-gradient(circle,#0b0d1599 0,#0b0d1566 55%,transparent 72%);border:1px solid #ffffff22;box-shadow:none;text-shadow:0 1px 10px #000}
 .wave-orb:hover .orb-core{border-color:#b9ff4b66}
 .wave-orb:after{box-shadow:none;border-color:#ffffff10}
+/* Night sky behind everything (starfield.js) and a second slow glow so the background never stands still. */
+.star-canvas{position:fixed;inset:0;z-index:-2;width:100vw;height:100vh;pointer-events:none}
+.star-canvas[hidden]{display:none}
+.ambient-glow{animation:ambient-drift 18s ease-in-out infinite alternate}
+@keyframes ambient-drift{0%{translate:0 0;rotate:0deg;scale:1}35%{translate:-5% 6%;rotate:12deg;scale:1.06}70%{translate:-9% 2%;rotate:26deg;scale:.97}100%{translate:-4% 10%;rotate:34deg;scale:1.08}}
+.ambient-glow-2{right:auto;left:-14%;top:auto;bottom:-30vh;width:640px;height:640px;background:conic-gradient(from 20deg,#44d7d0,#7654ff,#e557a8,#44d7d0);filter:blur(200px);opacity:.09;animation:ambient-drift-2 26s ease-in-out infinite alternate}
+@keyframes ambient-drift-2{0%{translate:0 0;rotate:0deg;scale:1}50%{translate:12% -14%;rotate:-24deg;scale:1.12}100%{translate:22% -4%;rotate:-40deg;scale:.95}}
+.backdrop-setting{grid-template-columns:minmax(0,1fr) auto}
+.backdrop-switches{display:flex;flex-wrap:wrap;gap:12px 22px;justify-content:flex-end}
+.backdrop-switches .switch{justify-self:auto}
+@media(max-width:767px){.ambient-glow-2{width:420px;height:420px;opacity:.07}.backdrop-setting{grid-template-columns:1fr}.backdrop-switches{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.ambient-glow,.ambient-glow-2{animation:none}}

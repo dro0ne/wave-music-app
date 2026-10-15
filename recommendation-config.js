@@ -12,6 +12,8 @@ window.WAVE_RECOMMENDATION_CONFIG={
     experiment:{start:.05,end:.40}
   },
   weights:{preference:.25,similarity:.18,mood:.22,userNovelty:.22,releaseNovelty:.05,diversity:.08},
+  // How much listener numbers (plays, favorites) count: strong at "Знакомое", weak at "Новое".
+  popularity:{familiar:.36,discovery:.12},
   penalties:{sameTrack:1.25,recentTrack:.72,sameArtist:.34,recentArtist:.16,sameAlbum:.18,genreStreak:.12,skip:.22},
   feedback:{dislikeTrackPenalty:1.35,dislikeArtistSignal:-.70,dislikeGenreSignal:-.12,likeArtistSignal:1.60,likeGenreSignal:.55},
   moodProfiles:{

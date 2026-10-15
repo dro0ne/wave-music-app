@@ -88,7 +88,7 @@
       this.state='IDLE';this.mood='Спокойствие';this.frame=0;this.last=0;this.phase=0;this.activity=0;this.bands={bass:0,mid:0,high:0,rms:0};this.frames=0;this.costs=[];this.intervals=[];this.reduced=root.matchMedia('(prefers-reduced-motion: reduce)');
       this.particles=[];this.shapeIndex=0;this.shapeName=null;this.poseIndex=0;this.beats=0;this.beatPulse=0;this.kick=0;this.beatClock=0;this.bpm=90;this.flux=[];this.onsets=[];this.lastOnset=0;this.period=0;this.nextBeatAt=0;this.locked=false;this.morph=1;this.morphSpeed=2;this.quality=1;this.sprites=[];this.center={x:0,y:0,r:100};
       this.resize=()=>{if(!this.context)return;const rect=canvas.getBoundingClientRect();this.width=Math.max(1,rect.width);this.height=Math.max(1,rect.height);this.mobile=this.width<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0);const count=this.mobile?900:1600;if(this.particles.length!==count)this.spawn(count);this.locate();this.render();this.resume()};
-      this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context)return;
+      this.enabled=true;this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context||!this.enabled)return;
         // Phones run at 30 fps; a frame is skipped only when it comes clearly early, so 60 Hz screens never judder.
         const target=this.mobile?30:60;if(target<50&&this.last&&now-this.last<1000/target*.75){this.frame=requestAnimationFrame(this.tick);return}
         const dt=Math.min(.1,this.last?(now-this.last)/1000:1/60);if(this.last){this.intervals.push(now-this.last);if(this.intervals.length>180)this.intervals.shift()}this.last=now;
@@ -127,7 +127,9 @@
     setState(state){if(this.state!==state){this.costs=[];this.intervals=[];this.last=0}this.state=state;this.resume()}
     setMood(mood){if(mood===this.mood)return;this.mood=mood;this.palette();this.shapeIndex=-1;this.nextShape(false,true);this.render()}
     suspend(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.last=0}
-    resume(){if(!this.context||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
+    resume(){if(!this.context||!this.enabled||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
+    // The particles can be switched off in settings; the canvas is hidden and stops drawing entirely.
+    setEnabled(on){this.enabled=!!on;if(this.canvas)this.canvas.hidden=!this.enabled;if(this.enabled){this.last=0;this.resume()}else this.suspend()}
     beat(strength){this.beats++;this.beatPulse=Math.min(1.3,.7+strength*.6);this.kick=1;const dancer=this.shapeName==='dancer';if(!FIGURES.includes(this.shapeName))this.burst(.06+strength*.12);if(dancer)this.nextPose();if(this.beats%(dancer?32:16)===0)this.nextShape()}
     // Reads the analyser. Beats are found from sudden rises of low-frequency energy (spectral flux), not from its level:
     // loud modern masters keep the bass level near the top all the time, so a level threshold never fires.

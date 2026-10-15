@@ -68,6 +68,8 @@
     let playPenalty=clamp(Math.log2(1+(stats.plays||0))/5),recency=Math.exp(-daysSince(stats.lastPlayedAt)/12),week=(stats.recentPlayDates||[]).filter(x=>daysSince(x)<7).length;
     let liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));return clamp(1-playPenalty*.52-recency*.34-clamp(week/5)*.28-(liked?.12:0));
   }
+  // Audius play and favorite counts: 0 for a fresh upload nobody heard, 1 around a hundred thousand plays. Unknown is neutral.
+  function popularityScore(track){let plays=track.plays,favorites=track.favorites;if(plays==null&&favorites==null)return .5;return clamp(.75*clamp(Math.log10(1+(plays||0))/5)+.25*clamp(Math.log10(1+(favorites||0))/3.5))}
   function releaseNoveltyScore(track){let age=daysSince(track.releaseDate||track.release_date);if(age===9999)return .5;return clamp(1-Math.log10(1+age)/3.75)}
   function diversity(track,session){
     let recent=session.previousTracks.slice(-C.historyWindow),last=recent.at(-1),score=1,album=track.album||track.albumName;
@@ -86,12 +88,12 @@
   function mixWeight(type,n){let key=type.toLowerCase(),range=C.mix[key];return lerp(range.start,range.end,n)}
   function weightedFactor(score,weight,neutral=1){return Math.max(.08,1+(score-neutral)*weight)}
   function scoreTrack(track,context){
-    let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),moodDetail=global.WaveMood?.score(track,session.currentMood,state),mood=moodDetail?.score??moodScore(track,session.currentMood,state),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),p=penalties(track,session,state);
+    let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),moodDetail=global.WaveMood?.score(track,session.currentMood,state),mood=moodDetail?.score??moodScore(track,session.currentMood,state),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),popularity=popularityScore(track),popularityWeight=lerp(C.popularity?.familiar??0,C.popularity?.discovery??0,n),p=penalties(track,session,state);
     let noveltyScore=(1-n)*(1-userNovelty)+n*userNovelty,releaseFit=(1-n)*.5+n*releaseNovelty,discoveryScore=mixWeight(type,n),w=C.weights;
     let applied={preferenceWeight:w.preference,similarityWeight:w.similarity,moodWeight:w.mood,userNoveltyWeight:w.userNovelty,releaseNoveltyWeight:w.releaseNovelty,diversityWeight:w.diversity};
-    let positive=weightedFactor(preference,w.preference)*weightedFactor(similarity,w.similarity)*weightedFactor(mood,w.mood)*weightedFactor(noveltyScore,w.userNovelty,.5)*weightedFactor(releaseFit,w.releaseNovelty,.5)*weightedFactor(diversityScore,w.diversity)*(.45+discoveryScore);
+    let positive=weightedFactor(preference,w.preference)*weightedFactor(similarity,w.similarity)*weightedFactor(mood,w.mood)*weightedFactor(noveltyScore,w.userNovelty,.5)*weightedFactor(releaseFit,w.releaseNovelty,.5)*weightedFactor(diversityScore,w.diversity)*weightedFactor(popularity,popularityWeight,.5)*(.45+discoveryScore);
     let finalScore=positive-p.repeatPenalty-p.artistRepeatPenalty-p.skipPenalty-p.albumPenalty;
-    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,moodConfidence:moodDetail?.confidence??null,moodReasons:moodDetail?.reasons??null,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
+    return {track,finalScore,preferenceScore:preference,similarityScore:similarity,moodScore:mood,moodConfidence:moodDetail?.confidence??null,moodReasons:moodDetail?.reasons??null,noveltyScore,discoveryScore,userNoveltyScore:userNovelty,releaseNoveltyScore:releaseNovelty,diversityScore,popularityScore:popularity,popularityWeight,...applied,repeatPenalty:p.repeatPenalty,artistRepeatPenalty:p.artistRepeatPenalty,skipPenalty:p.skipPenalty,selectionType:type};
   }
   function getRankedCandidates(catalog,context,limit=15){
     return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
@@ -116,5 +118,5 @@
     context.session.currentTrackId=idOf(chosen.track);if(!context.session.seedTrackId)context.session.seedTrackId=context.session.currentTrackId;
     return chosen;
   }
-  global.WaveRecommendation={createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,isRecentlyPlayed,eligibleCandidates,sampleCandidatesWithoutReplacement,getWeightedCandidateOrder,getRankedCandidates,getNextTrack,idOf};
+  global.WaveRecommendation={popularityScore,createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,isRecentlyPlayed,eligibleCandidates,sampleCandidatesWithoutReplacement,getWeightedCandidateOrder,getRankedCandidates,getNextTrack,idOf};
 })(window);
