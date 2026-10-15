@@ -9,11 +9,11 @@
   function createSession(saved={}){
     return {userId:saved.userId||'local-user',sessionId:saved.sessionId||null,finalizedPlaybackEvents:Array.isArray(saved.finalizedPlaybackEvents)?saved.finalizedPlaybackEvents.slice(-200):[],seedTrackId:saved.seedTrackId||null,currentMood:saved.currentMood||'Спокойствие',noveltyLevel:clamp(Number(saved.noveltyLevel??.5)),startedAt:saved.startedAt||new Date().toISOString(),currentTrackId:saved.currentTrackId||null,previousTracks:Array.isArray(saved.previousTracks)?saved.previousTracks.slice(-C.historyWindow):[]};
   }
-  function updateWavePreferences(session,patch){if(patch.mood!==undefined)session.currentMood=patch.mood;if(patch.noveltyLevel!==undefined)session.noveltyLevel=clamp(Number(patch.noveltyLevel));return session}
+  function updateWavePreferences(session,patch){scoreEpoch++;if(patch.mood!==undefined)session.currentMood=patch.mood;if(patch.noveltyLevel!==undefined)session.noveltyLevel=clamp(Number(patch.noveltyLevel));return session}
   function ensureStats(state,id){state.trackStats||={};return state.trackStats[id]||={plays:0,completed:0,skips:0,likes:0,dislikes:0,lastPlayedAt:null,recentPlayDates:[]}}
-  function changeTaste(state,track,artistSignal,genreSignal){state.taste||={genres:{},artists:{},subgenres:{}};state.taste.genres||={};state.taste.subgenres||={};state.taste.artists||={};let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre;state.taste.genres[family]=(state.taste.genres[family]||0)+genreSignal;(track.subgenres||[]).forEach(x=>state.taste.subgenres[x]=(state.taste.subgenres[x]||0)+genreSignal*1.6);state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
-  function addToHistory(state,track){state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,C.historyWindow)}
-  function recordEvent(state,session,track,event,details=0){
+  function changeTaste(state,track,artistSignal,genreSignal){scoreEpoch++;state.taste||={genres:{},artists:{},subgenres:{}};state.taste.genres||={};state.taste.subgenres||={};state.taste.artists||={};let family=track.normalizedGenre||global.WaveGenre?.normalizeGenre(track.genre,track.tags).normalizedGenre||track.genre;state.taste.genres[family]=(state.taste.genres[family]||0)+genreSignal;(track.subgenres||[]).forEach(x=>state.taste.subgenres[x]=(state.taste.subgenres[x]||0)+genreSignal*1.6);state.taste.artists[track.artist]=(state.taste.artists[track.artist]||0)+artistSignal}
+  function addToHistory(state,track){scoreEpoch++;state.history||=[];let id=idOf(track);if(idOf(state.history[0])!==id)state.history=[track,...state.history.filter(x=>idOf(x)!==id)].slice(0,C.historyWindow)}
+  function recordEvent(state,session,track,event,details=0){scoreEpoch++;
     if(!track)return;
     const managed=typeof details==='object'&&!!details.playbackEventId,terminal=['ended','next','skip','dislike','error','search'].includes(event);
     if(managed&&terminal){session.finalizedPlaybackEvents||=[];if(session.finalizedPlaybackEvents.includes(details.playbackEventId))return;session.finalizedPlaybackEvents.push(details.playbackEventId);session.finalizedPlaybackEvents=session.finalizedPlaybackEvents.slice(-200)}
@@ -87,7 +87,11 @@
   function selectionType(track,state,selectedGenres){let stats=state.trackStats?.[idOf(track)]||{},liked=(state.likes||[]).some(x=>idOf(x)===idOf(track));if(liked||(stats.completed||0)>0||((stats.plays||0)>=2&&(stats.skips||0)<(stats.plays||0)))return'FAMILIAR';return tasteCompatibility(track,state,selectedGenres)>=.63?'DISCOVERY':'EXPERIMENT'}
   function mixWeight(type,n){let key=type.toLowerCase(),range=C.mix[key];return lerp(range.start,range.end,n)}
   function weightedFactor(score,weight,neutral=1){return Math.max(.08,1+(score-neutral)*weight)}
-  function scoreTrack(track,context){
+  // One track switch ranks the catalog several times (next track, backups, crossfade pick) with the same state,
+  // so scores are reused for up to 3 s while history, mood, novelty, likes and feedback stay the same.
+  let scoreEpoch=0;const scoreCache=new WeakMap();
+  function scoreTrack(track,context){if(!track||typeof track!=='object')return computeScore(track,context);const {state,session}=context,key=`${scoreEpoch}|${Object.values(C.weights).join(',')},${C.popularity?.familiar},${C.popularity?.discovery}|${session.previousTracks.length}|${String(session.previousTracks.at(-1)?.id??'')}|${session.currentMood}|${session.noveltyLevel}|${(state.likes||[]).length}|${(state.dislikes||[]).length}|${(context.selectedGenres||[]).join(',')}`,now=Date.now(),hit=scoreCache.get(track);if(hit&&hit.key===key&&hit.state===state&&hit.session===session&&now-hit.at<3000)return hit.value;const value=computeScore(track,context);scoreCache.set(track,{key,state,session,at:now,value});return value}
+  function computeScore(track,context){
     let {state,session}=context,n=session.noveltyLevel,type=selectionType(track,state,context.selectedGenres),preference=preferenceScore(track,state,context.selectedGenres),similarity=similarityScore(track,session,state),moodDetail=global.WaveMood?.score(track,session.currentMood,state),mood=moodDetail?.score??moodScore(track,session.currentMood,state),userNovelty=userNoveltyScore(track,state),releaseNovelty=releaseNoveltyScore(track),diversityScore=diversity(track,session),popularity=popularityScore(track),popularityWeight=lerp(C.popularity?.familiar??0,C.popularity?.discovery??0,n),p=penalties(track,session,state);
     let noveltyScore=(1-n)*(1-userNovelty)+n*userNovelty,releaseFit=(1-n)*.5+n*releaseNovelty,discoveryScore=mixWeight(type,n),w=C.weights;
     let applied={preferenceWeight:w.preference,similarityWeight:w.similarity,moodWeight:w.mood,userNoveltyWeight:w.userNovelty,releaseNoveltyWeight:w.releaseNovelty,diversityWeight:w.diversity};
@@ -98,7 +102,22 @@
   function getRankedCandidates(catalog,context,limit=15){
     return catalog.filter(Boolean).map(track=>scoreTrack(track,context)).sort((a,b)=>b.finalScore-a.finalScore).slice(0,Math.max(0,limit));
   }
-  function isRecentlyPlayed(track,session,windowSize=C.hardTrackBlock){let id=idOf(track);return session.previousTracks.slice(-windowSize).some(previous=>(String(previous.id)===id||global.WaveTrackModel?.samePlaybackRecording(track,previous)))}
+  // Every catalog track is checked against the recent history several times per track switch. Comparing each
+  // pair froze the page for seconds on phones, so the recent tracks are indexed once per history state: ids,
+  // source keys, recording keys and artist|title|version. Only tracks sharing that last key get the full check.
+  const recentIndexes=new WeakMap();
+  function recentIndex(session,windowSize){
+    const list=session.previousTracks.slice(-windowSize),stamp=`${session.previousTracks.length}:${String(list[0]?.id??'')}:${String(list.at(-1)?.id??'')}`,byWindow=recentIndexes.get(session)||new Map();recentIndexes.set(session,byWindow);
+    let index=byWindow.get(windowSize);if(index?.stamp===stamp)return index;
+    const model=global.WaveTrackModel;index={stamp,ids:new Set(),keys:new Set(),canonical:new Set(),byName:new Map()};
+    for(const previous of list){index.ids.add(String(previous.id));for(const key of model?.sourceKeys(previous)||[])index.keys.add(key);if(previous.canonicalRecordingKey)index.canonical.add(previous.canonicalRecordingKey);if(model){const name=model.dedupeKey(previous);if(!index.byName.has(name))index.byName.set(name,[]);index.byName.get(name).push(previous)}}
+    byWindow.set(windowSize,index);return index;
+  }
+  function isRecentlyPlayed(track,session,windowSize=C.hardTrackBlock){
+    const index=recentIndex(session,windowSize),model=global.WaveTrackModel;if(index.ids.has(idOf(track)))return true;if(!model)return false;
+    if(model.sourceKeys(track).some(key=>index.keys.has(key)))return true;if(track.canonicalRecordingKey&&index.canonical.has(track.canonicalRecordingKey))return true;
+    return (index.byName.get(model.dedupeKey(track))||[]).some(previous=>model.samePlaybackRecording(track,previous));
+  }
   function eligibleCandidates(catalog,session){
     let source=catalog.filter(Boolean),stages=[[C.hardTrackBlock,10],[C.hardTrackBlockRelaxed,5],[C.hardTrackBlockMinimum,1]];
     for(let [windowSize,minimum] of stages){let candidates=source.filter(track=>!isRecentlyPlayed(track,session,windowSize));if(candidates.length>=minimum)return {candidates,windowSize,hardBlockedCount:source.length-candidates.length}}
