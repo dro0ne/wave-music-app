@@ -329,3 +329,25 @@ body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-bre
 /* It scrolls with the page: as a fixed layer it stayed put while the orb moved, so the snakes slid off the
    ring and jumped back on each re-measure. JS places the canvas inside it around the orb. */
 .wavefield,.wavefield.wavefield{position:absolute;inset:0 0 auto 0;width:auto;height:1100px;overflow:hidden;transform:none}
+/* Profile page: who you are to the wave, then every setting, then the less frequent actions. */
+.profile-page{min-height:65vh;padding:clamp(22px,4vw,48px) 0}
+.profile-head{display:flex;align-items:center;gap:18px;margin-bottom:26px}
+.profile-head .avatar{flex:none;width:68px;height:68px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(135deg,#7751f8,#c96ad6);font-size:26px}
+.profile-head p{margin:0 0 6px;color:var(--green);font-size:11px;font-weight:850;letter-spacing:.16em}
+.profile-head h1{margin:0 0 10px;font-size:clamp(30px,3.4vw,44px);letter-spacing:-.03em;line-height:1.05}
+.profile-stats{display:flex;flex-wrap:wrap;gap:8px}
+.profile-stats span{padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:#ffffff06;color:var(--muted);font-size:12px}
+.profile-stats b{margin-right:5px;color:var(--text)}
+.profile-stats .profile-taste{flex-basis:100%;padding:0;border:0;background:none}
+.profile-page .settings-block{margin-bottom:22px}
+.profile-actions{display:grid;gap:4px;max-width:520px}
+.profile-actions button{min-height:58px;display:flex;align-items:center;gap:14px;padding:9px 10px;border:0;border-radius:13px;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.profile-actions button:hover{background:#ffffff08}
+.profile-actions svg,.profile-actions .sheet-symbol{width:26px;height:26px;display:grid;place-items:center;color:var(--green);font-size:22px}
+.profile-actions strong,.profile-actions small{display:block}.profile-actions small{margin-top:2px;color:var(--muted);font-size:12px}
+.desktop-sidebar .profile{width:100%;padding:8px;border:0;border-radius:14px;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.desktop-sidebar .profile:hover{background:#ffffff08}.desktop-sidebar .profile.active{background:#b9ff4b14}
+.snake-setting{grid-template-columns:minmax(0,1fr) auto}
+.snake-setting .range-wrap{grid-column:1/-1}
+.snake-setting.disabled .range-wrap{opacity:.45}
+@media(max-width:767px){.profile-head{gap:14px;margin-bottom:18px}.profile-head .avatar{width:54px;height:54px;font-size:21px}.profile-head h1{font-size:26px}}
