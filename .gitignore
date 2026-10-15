@@ -1,2 +1,5 @@
 .env
 server/__pycache__/
+tools/doctor/.venv/
+tools/doctor/.browsers/
+tools/doctor/reports/

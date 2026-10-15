@@ -168,7 +168,7 @@ async function validateCandidate(selected,rank,token=null,signal=null){
   console.log('STREAM_VALIDATE_START',{trackId:id,title:track.title,rank,score:+selected.finalScore.toFixed(4)});
   if(track.source==='Local Demo')return track;
   try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
-  catch(error){if(signal?.aborted||token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});failedTrackIds.add(id,error);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
+  catch(error){if(signal?.aborted||token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});window.WaveTelemetry?.failed(track,`${error.name} ${error?.httpResult?.status||''}`);failedTrackIds.add(id,error);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
 }
 function selectedTrack(selected,track){
   let t={...track,reason:`${selected.selectionType} · настроение ${selected.moodScore.toFixed(2)} · новизна ${selected.userNoveltyScore.toFixed(2)}`};
@@ -278,11 +278,12 @@ function sampleListening(binding){
 }
 function markPlaying(binding){
   sampleListening(binding);let event=binding.event;event.active=true;
-  if(!event.confirmed){event.confirmed=true;const key=playbackKey(event.track);playbackController.confirmedStarts.push({trackKey:key,playbackEventId:event.id});playbackController.confirmedStarts=playbackController.confirmedStarts.slice(-120);window.__lastWaveSelections=playbackController.confirmedStarts.map(x=>x.trackKey);logPlayback('PLAYING_CONFIRMED',{playbackEventId:event.id,currentTrackKey:key})}
+  if(!event.confirmed){event.confirmed=true;const key=playbackKey(event.track);playbackController.confirmedStarts.push({trackKey:key,playbackEventId:event.id});playbackController.confirmedStarts=playbackController.confirmedStarts.slice(-120);window.__lastWaveSelections=playbackController.confirmedStarts.map(x=>x.trackKey);logPlayback('PLAYING_CONFIRMED',{playbackEventId:event.id,currentTrackKey:key});window.WaveTelemetry?.play(event.track)}
 }
 function finalizePlayback(event,reason,binding=null){
   if(!event||event.finalized)return false;sampleListening(binding);event.finalized=true;event.active=false;
   let seconds=event.listenedSeconds,duration=Number(event.track.duration)||1,ratio=Math.max(0,Math.min(1,seconds/duration));
+  if(event.confirmed)window.WaveTelemetry?.end(event.track,reason,seconds);
   WaveRecommendation.recordEvent(state,waveSession,event.track,reason,{playbackEventId:event.id,playingConfirmed:event.confirmed,listenedSeconds:seconds,progressRatio:ratio});
   if(event.confirmed)maybeReplenishCatalog(reason,seconds);save();libraries();logPlayback('EVENT_FINALIZED',{playbackEventId:event.id,finalizedTrackKey:playbackKey(event.track),finalizationReason:reason,listenedSeconds:seconds,progressRatio:ratio,playingConfirmed:event.confirmed});
   return true;
@@ -398,7 +399,7 @@ async function pickForTransition(operation){
   }
   return chosen;
 }
-async function start(){
+async function start(){window.WaveTelemetry?.action('start');
   return runTransition('start',async operation=>{
     beginStartup();startupMark('recommendation_start');unlockPlayback();ensureWaveAudioContext();advanceBufferGeneration('start',true);playbackStoppedOnError=false;setPlayerState(PLAYER_STATES.LOADING);$('#waveOrb').disabled=true;$('#player').classList.add('visible');$('#miniPlayer').classList.add('visible');
     await operationAwait(loadCatalog(false,false,false,true),operation);let chosen=await pickForTransition(operation);if(!chosen){showPoolExhausted();return false}
@@ -555,6 +556,8 @@ window.waveStarfield=window.WaveStarfield?new WaveStarfield($('#starCanvas')):nu
 function applyBackdropSettings(){let particles=state.particlesEnabled!==false,stars=state.starsEnabled!==false,speed=state.snakeSpeed??50,bass=state.snakeBass??50;$('#particlesEnabled').checked=particles;$('#starsEnabled').checked=stars;$('#snakeSpeed').value=speed;$('#snakeBass').value=bass;for(let input of [$('#snakeSpeed'),$('#snakeBass')]){input.disabled=!particles;paintRange?.(input)}$('.snake-setting').classList.toggle('disabled',!particles);window.waveBackdrop?.setEnabled?.(particles);window.waveBackdrop?.setStyle?.({speed:speed/50,bass:bass/50});window.waveStarfield?.setEnabled(stars)}
 $('#snakeSpeed').oninput=e=>{state.snakeSpeed=+e.target.value;save();applyBackdropSettings()};
 $('#snakeBass').oninput=e=>{state.snakeBass=+e.target.value;save();applyBackdropSettings()};
+window.WaveTelemetry?.configure({isEnabled:()=>state.telemetryEnabled!==false,context:()=>({user:window.WaveAccount?.signedIn?window.WaveAccount.profile().name||null:null,mood:state.mood,genres:(state.genres||[]).slice(0,6),discovery:state.discovery,snakes:state.particlesEnabled!==false,stars:state.starsEnabled!==false})});
+$('#telemetryEnabled').checked=state.telemetryEnabled!==false;$('#telemetryEnabled').onchange=e=>{state.telemetryEnabled=e.target.checked;save()};
 // Identity: avatar picture or the first letter of the nickname, in the sidebar and on the profile page.
 function renderAvatar(el,profile){el.replaceChildren();if(profile.avatar){let img=new Image();img.src=profile.avatar;img.alt='';el.append(img)}else el.textContent=(profile.name||'Я').trim().charAt(0).toUpperCase()||'Я'}
 function renderIdentity(){let profile=window.WaveAccount?.profile()||{},name=profile.name||'Мой профиль';for(let el of [$('#avatarView'),$('#sidebarAvatar')])if(el)renderAvatar(el,profile);$('#profileName').textContent=name;$('#sidebarName').textContent=name;renderAccount()}
@@ -607,7 +610,7 @@ function showQueue(){renderQueue();openSheet($('#queueSheet'));void fillPlayback
 async function shareCurrent(){let t=current();if(!t)return toast('Сначала запусти волну');let data={title:`${t.title} — ${t.artist}`,text:`Слушаю ${t.title} — ${t.artist} в «Волне»`,url:location.href};try{if(navigator.share)await navigator.share(data);else if(navigator.clipboard){await navigator.clipboard.writeText(`${data.text} ${data.url}`);toast('Ссылка скопирована')}else throw Error('share unavailable')}catch(error){if(error?.name!=='AbortError')toast('Не удалось поделиться')}}
 function dislikeCurrent(){if(!current())return;recordPlayback('dislike');invalidateNextBuffer('dislike');toast('Дизлайк учтён — выбираем другой трек');void next('dislike',true)}
 function resetPreferences(){if(confirm('Сбросить выбранные жанры, настроение, лайки и историю?')){localStorage.removeItem('waveState');location.reload()}}
-function runPlayerAction(action){if(action==='play')return playing?pause():play();if(action==='next')return void next('next');if(action==='prev')return prev();if(action==='like')return toggleLike();if(action==='dislike')return dislikeCurrent();if(action==='repeat')return toggleRepeat();if(action==='queue')return showQueue();if(action==='share')return void shareCurrent()}
+function runPlayerAction(action){window.WaveTelemetry?.action(action);if(action==='play')return playing?pause():play();if(action==='next')return void next('next');if(action==='prev')return prev();if(action==='like')return toggleLike();if(action==='dislike')return dislikeCurrent();if(action==='repeat')return toggleRepeat();if(action==='queue')return showQueue();if(action==='share')return void shareCurrent()}
 $('#waveOrb').onclick=()=>playing?pause():current()?play():start();$('#reset').onclick=resetPreferences;document.querySelectorAll('[data-reset-preferences]').forEach(x=>x.onclick=resetPreferences);
 document.addEventListener('click',event=>{let action=event.target.closest('[data-player-action]')?.dataset.playerAction;if(action){event.preventDefault();event.stopPropagation();runPlayerAction(action)}});
 $('#volume').oninput=()=>{if(media)media.volume=+$('#volume').value/100;else if(playing){stopSound();sound(current())}};

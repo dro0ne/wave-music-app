@@ -32,6 +32,7 @@ USER_AGENT = 'wave-music-cache/1.0'
 MAX_URL = 2048
 LIB_DB = os.environ.get('LIB_DB', '/music/library.db')
 ACCOUNTS_DB = os.environ.get('ACCOUNTS_DB', '/data/accounts.db')
+TELEMETRY_DB = os.environ.get('TELEMETRY_DB', '/data/telemetry.db')
 MAX_BODY = 2 * 1024 * 1024
 accounts = None
 LIBRARY_FIELDS = 'id, title, artist, album, tags, duration, downloads, license, permalink, artwork, file'
@@ -190,6 +191,47 @@ def library_tracks(query):
     return [{**{k: row[k] for k in row.keys() if k != 'file'}, 'stream': 'media/' + urllib.parse.quote(row['file'])} for row in rows]
 
 
+class Telemetry:
+    """Field reports from the site (telemetry.js) for tools/doctor. Write-only over HTTP: the doctor reads the
+    database over SSH. Kept 30 days; client addresses are used for rate limiting only and never stored."""
+    MAX_BODY, MAX_EVENTS, KEEP_DAYS, PER_WINDOW, WINDOW = 64 * 1024, 200, 30, 30, 600
+
+    def __init__(self, path):
+        if path != ':memory:':
+            os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        self.db = sqlite3.connect(path, check_same_thread=False)
+        self.db.execute('PRAGMA journal_mode=WAL')
+        self.db.execute('CREATE TABLE IF NOT EXISTS events (received REAL, device TEXT, context TEXT, kind TEXT, data TEXT)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS events_received ON events(received)')
+        self.lock = threading.Lock()
+        self.recent = {}
+        self.writes = 0
+
+    def accept(self, body, client):
+        now = time.time()
+        with self.lock:
+            hits = [t for t in self.recent.get(client, []) if now - t < self.WINDOW]
+            if len(hits) >= self.PER_WINDOW:
+                return 429
+            self.recent[client] = hits + [now]
+            device = str(body.get('device') or '')[:24]
+            context = json.dumps(body.get('context') or {}, ensure_ascii=False)[:2000]
+            events = body.get('events') or []
+            if not isinstance(events, list):
+                return 400
+            rows = [(now, device, context, str(e.get('kind') or '')[:24], json.dumps(e, ensure_ascii=False)[:4000])
+                    for e in events[:self.MAX_EVENTS] if isinstance(e, dict)]
+            self.db.executemany('INSERT INTO events VALUES (?,?,?,?,?)', rows)
+            self.writes += 1
+            if self.writes % 200 == 0:
+                self.db.execute('DELETE FROM events WHERE received < ?', (now - self.KEEP_DAYS * 86400,))
+            self.db.commit()
+        return 204
+
+
+telemetry = None
+
+
 def log(message):
     print(time.strftime('%Y-%m-%d %H:%M:%S'), message, file=sys.stderr, flush=True)
 
@@ -231,7 +273,23 @@ class Handler(BaseHTTPRequestHandler):
     }
 
     def do_POST(self):
+        if self.path.partition('?')[0] == '/api/telemetry':
+            return self.receive_telemetry()
         self.route_account('POST')
+
+    def receive_telemetry(self):
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            if not 0 < length <= Telemetry.MAX_BODY:
+                return self.send(413, b'{"error":"too_big"}')
+            body = json.loads(self.rfile.read(length))
+            status = telemetry.accept(body if isinstance(body, dict) else {}, self.client())
+        except (ValueError, json.JSONDecodeError):
+            status = 400
+        except Exception as error:
+            log(f'telemetry error: {error!r}')
+            status = 500
+        self.send(status, b'' if status == 204 else b'{}')
 
     def do_PUT(self):
         self.route_account('PUT')
@@ -283,9 +341,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global cache, accounts
+    global cache, accounts, telemetry
     cache = Cache(CACHE_DB)
     accounts = Accounts(ACCOUNTS_DB)
+    telemetry = Telemetry(TELEMETRY_DB)
     server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
     server.daemon_threads = True
     log(f'listening on {PORT}, jamendo {"on" if JAMENDO_CLIENT_ID else "off"}, {cache.count()} cached')
