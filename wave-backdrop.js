@@ -3,7 +3,7 @@
   // Glowing "snakes" circle the wave orb and dance to the music, with loose fireflies drifting around them:
   // the snakes speed up with the tempo, ripple with the bass and leap off the ring on every beat.
   const TAU=Math.PI*2,rand=(a=0,b=1)=>a+Math.random()*(b-a);
-  const PALETTES={'Спокойствие':['#7c6cff','#5b8cff','#9fd8ff','#c7b8ff'],'Энергия':['#ff7a3d','#ffb347','#ffe066','#ff4d6d'],'Мечтательно':['#a46bff','#6f8bff','#ff9be2','#c9b6ff'],'Фокус':['#3fd0c9','#5bc0ff','#b9ff4b','#9ff2e6'],'Романтика':['#ff5fa2','#ff8fc7','#d36bff','#ffc2dc'],'Вечеринка':['#ff4fd8','#7a5cff','#3ddcff','#b9ff4b']};
+  const PALETTES={'Спокойствие':['#7c6cff','#5b8cff','#9fd8ff','#c7b8ff'],'Энергия':['#ff7a3d','#ffd23f','#33e1ff','#ff4fa0'],'Мечтательно':['#a46bff','#6f8bff','#ff9be2','#c9b6ff'],'Фокус':['#3fd0c9','#5bc0ff','#b9ff4b','#9ff2e6'],'Романтика':['#ff5fa2','#ff8fc7','#d36bff','#ffc2dc'],'Вечеринка':['#ff4fd8','#7a5cff','#3ddcff','#b9ff4b']};
   // How many snakes circle the orb and how lively they move for each mood.
   const MOTION={'Спокойствие':{snakes:2,pace:.7},'Фокус':{snakes:2,pace:.6},'Мечтательно':{snakes:3,pace:.85},'Романтика':{snakes:2,pace:.8},'Энергия':{snakes:3,pace:1.3},'Вечеринка':{snakes:4,pace:1.45}};
   // Share of particles in the snakes; the rest are fireflies.
@@ -55,8 +55,10 @@
     // Splits the particles into snakes (head first) and fireflies with their own orbit, speed and colour.
     cast(){const motion=MOTION[this.mood]||MOTION['Спокойствие'],snakes=motion.snakes,body=Math.floor(this.particles.length*SNAKE_SHARE/snakes);this.snakes=Array.from({length:snakes},(_,k)=>this.snakes?.[k]||{angle:rand(0,TAU)});
       this.snakes.forEach((snake,k)=>{snake.dir=k%2?-1:1;snake.orbit=1.12+k*(this.mobile?.11:.16);snake.length=1.1+(k%3)*.35;snake.speed=.8+k*.18;snake.twist=2+k});
-      this.particles.forEach((p,i)=>{const k=Math.floor(i/body);if(k<snakes){p.snake=k;p.s=(i%body)/body;p.color=k%4;p.offset=(p.seed-.5)*2}else{p.snake=-1;p.s=0;p.orbit=rand(1.05,2.1);p.angle=rand(0,TAU);p.spin=rand(.04,.16)*(Math.random()<.5?-1:1);p.color=Math.floor(rand(0,4))}})}
-    palette(){const colors=PALETTES[this.mood]||PALETTES['Спокойствие'];this.colors=[...colors,'#eaf6ff'].map(hexRgb);if(this.glState){this.sprites=[1];return}const {atlas,cells}=buildAtlas([...colors,'#eaf6ff']);this.atlas=atlas;this.sprites=cells}
+      this.particles.forEach((p,i)=>{const k=Math.floor(i/body);if(k<snakes){p.snake=k;p.s=(i%body)/body;p.color=k%4;p.offset=(p.seed-.5)*2}else{p.snake=-1;p.s=0;p.orbit=rand(1.05,2.1);p.angle=rand(0,TAU);p.spin=rand(.04,.16)*(Math.random()<.5?-1:1);p.color=Math.floor(rand(0,4))}});this.tint()}
+    // Each snake runs through two colours of the mood, head to tail; fireflies keep one colour each.
+    tint(){const colors=this.colors;if(!colors)return;for(const p of this.particles){if(p.snake>=0){const a=p.snake%4,b=(p.snake+1)%4,t=Math.min(1,p.s*1.25);p.rgb=colors[a].map((v,i)=>v+(colors[b][i]-v)*t);p.color=t<.5?a:b}else p.rgb=colors[p.color]}}
+    palette(){const colors=PALETTES[this.mood]||PALETTES['Спокойствие'];this.colors=[...colors,'#eaf6ff'].map(hexRgb);this.tint();if(this.glState){this.sprites=[1];return}const {atlas,cells}=buildAtlas([...colors,'#eaf6ff']);this.atlas=atlas;this.sprites=cells}
     // The canvas is only a square around the orb, a few orb radii wide, instead of a full-width band: far fewer
     // pixels to draw every frame. When the orb moves, particles are shifted so nothing jumps on screen.
     // Without an orb (tests, odd layouts) the canvas keeps its CSS box and the dance sits in the upper right.
@@ -71,24 +73,24 @@
     locate(){this.fit(false)}
     // Where a particle wants to be right now: along its snake's body or on its firefly orbit.
     target(p,t){const {x:cx,y:cy,r}=this.center,bass=this.bands.bass,pulse=this.beatPulse;
-      if(p.snake<0){const a=p.angle,rad=r*(p.orbit+Math.sin(this.phase*.7+p.seed*20)*.07+pulse*.08*p.orbit);t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad;return}
+      if(p.snake<0){const a=p.angle,rad=r*(p.orbit+Math.sin(this.phase*.7+p.seed*20)*.07+pulse*.035*p.orbit);t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad;return}
       const snake=this.snakes[p.snake],s=p.s,a=snake.angle-snake.dir*s*snake.length*(1+this.activity*.25),
         // The body sways, a bass wave runs from head to tail and each beat lifts the head off the ring.
-        sway=Math.sin(a*snake.twist+this.phase*2.2+p.snake)*.07,ripple=Math.sin(s*TAU*2-this.phase*7)*bass*.1*(1-s*.5),leap=pulse*.22*Math.max(0,1-s*1.8),
+        sway=Math.sin(a*snake.twist+this.phase*2.2+p.snake)*.07,ripple=Math.sin(s*TAU*2-this.phase*5)*bass*.05*(1-s*.5),leap=pulse*.12*Math.max(0,1-s*1.8),
         rad=r*(snake.orbit+sway+ripple+leap)+p.offset*r*.045*(1-s*.75);
       t[0]=cx+Math.cos(a)*rad;t[1]=cy+Math.sin(a)*rad}
     settle(){this.locate();const t=[0,0];this.particles.forEach(p=>{this.target(p,t);p.x=t[0];p.y=t[1];p.vx=p.vy=p.ox=p.oy=0})}
     burst(strength){const {x,y}=this.center;for(const p of this.particles){const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy)||1,force=strength*rand(60,160);p.vx+=dx/d*force;p.vy+=dy/d*force}}
     // Called by the app when a new track starts: the snakes scatter a little and the tempo eases over.
-    trackChanged(bpm){if(Number(bpm)>0)this.targetBpm=Number(bpm);this.onsets=[];this.locked=false;this.burst(.5)}
+    trackChanged(bpm){if(Number(bpm)>0)this.targetBpm=Number(bpm);this.onsets=[];this.locked=false;this.burst(.3)}
     setState(state){if(this.state!==state){this.costs=[];this.intervals=[];this.last=0}this.state=state;this.resume()}
     setMood(mood){if(mood===this.mood)return;this.mood=mood;this.palette();this.cast();this.burst(.4);this.render()}
     suspend(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.last=0}
     resume(){if(!this.context||!this.enabled||!this.onScreen||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
     // The particles can be switched off in settings; the canvas is hidden and stops drawing entirely.
     setEnabled(on){this.enabled=!!on;if(this.canvas)this.canvas.hidden=!this.enabled;if(this.enabled){this.last=0;this.resume()}else this.suspend()}
-    // On every beat the snakes lunge forward and their heads leap off the ring.
-    beat(strength){this.beats++;this.beatPulse=Math.min(1.3,.7+strength*.6);this.kick=1;for(const snake of this.snakes)snake.lunge=(snake.lunge||0)+.18+strength*.22}
+    // On every beat the snakes glide forward a little and their heads rise off the ring; kept soft so they sway, not twitch.
+    beat(strength){this.beats++;this.beatPulse=Math.min(1.3,.7+strength*.6);this.kick=1;for(const snake of this.snakes)snake.lunge=Math.min(.5,(snake.lunge||0)+.08+strength*.1)}
     // Reads the analyser. Beats are found from sudden rises of low-frequency energy (spectral flux), not from its level:
     // loud modern masters keep the bass level near the top all the time, so a level threshold never fires.
     listen(analyser,targets,now){
@@ -115,18 +117,18 @@
       const analyser=this.state==='PLAYING'?this.readAnalyser():null,targets={bass:0,mid:0,high:0,rms:0},now=performance.now();
       if(analyser)this.listen(analyser,targets,now);
       const smooth=(value,target,attack=.2,release=.65)=>value+(target-value)*(1-Math.exp(-dt/(target>value?attack:release)));
-      const playing=this.state==='PLAYING';this.activity=smooth(this.activity,playing?1:0,.6,1.1);for(const key of Object.keys(this.bands))this.bands[key]=smooth(this.bands[key],targets[key],.05,.35);
+      const playing=this.state==='PLAYING';this.activity=smooth(this.activity,playing?1:0,.6,1.1);for(const key of Object.keys(this.bands))this.bands[key]=smooth(this.bands[key],targets[key],.14,.5);
       // Tempo eases toward the new track instead of jumping.
       if(!this.locked){this.targetBpm=Number(this.readBpm())||this.targetBpm||90;this.bpm+=(this.targetBpm-this.bpm)*(1-Math.exp(-dt/2.5))}
       if(this.locked&&now-this.lastOnset>4000)this.locked=false;
       if(playing&&this.locked){if(now>=this.nextBeatAt){while(this.nextBeatAt<=now)this.nextBeatAt+=this.period;this.bpm=60000/this.period;this.beat(this.hit??.5);this.hit=.35}}
       else if(playing&&!analyser){this.beatClock+=dt*this.bpm/60;if(this.beatClock>=1){this.beatClock%=1;this.beat(.45)}}
-      this.beatPulse=smooth(this.beatPulse,0,.05,.16);this.kick=smooth(this.kick,0,.05,.09);
+      this.beatPulse=smooth(this.beatPulse,0,.05,.32);this.kick=smooth(this.kick,0,.05,.09);
       const pace=(MOTION[this.mood]||MOTION['Спокойствие']).pace;this.phase+=dt*(.25+this.activity*.6)*pace;
       if(this.frames%30===0)this.locate();
       // Idle: a slow glide. Playing: the orbit follows the tempo and the loudness, plus the lunges left by beats.
       const tempo=this.activity*(this.bpm/120)*(.7+this.bands.rms*.6);
-      for(const snake of this.snakes){const lunge=snake.lunge||0;snake.angle+=snake.dir*dt*(.22+tempo*.9+lunge*6)*snake.speed*pace;snake.lunge=lunge*Math.exp(-dt*7)}
+      for(const snake of this.snakes){const lunge=snake.lunge||0;snake.angle+=snake.dir*dt*(.22+tempo*.9+lunge*3)*snake.speed*pace;snake.lunge=lunge*Math.exp(-dt*2.5)}
       for(const p of this.particles)if(p.snake<0)p.angle+=dt*p.spin*(1+this.activity*1.5)*pace;
       // Scroll inertia: tails and fireflies lag behind the swipe and spring back; heads hold on to the ring.
       if(this.scrollPush){const push=this.scrollPush,limit=this.center.r*.5;this.scrollPush=0;
@@ -140,8 +142,8 @@
         p.vx=(p.vx+(t[0]+dx-p.x)*9*dt)*loose;p.vy=(p.vy+(t[1]+dy-p.y)*9*dt)*loose;p.x+=p.vx*dt;p.y+=p.vy*dt}
     }
     // Heads are big and bright, tails fade out; fireflies twinkle with the high end.
-    look(p){if(p.snake>=0){const taper=1-p.s;return {size:(.55+taper*.85)*(1+this.beatPulse*.5*taper),alpha:.25+taper*.6+this.beatPulse*.25*taper,white:p.s<.03}}
-      const flicker=.55+.45*Math.sin(this.phase*6+p.seed*90);return {size:.75*(1+this.bands.high*.6*flicker),alpha:.25+flicker*.45+this.activity*.1,white:false}}
+    look(p){if(p.snake>=0){const taper=1-p.s;return {size:(.55+taper*.85)*(1+this.beatPulse*.22*taper),alpha:.25+taper*.6+this.beatPulse*.12*taper,white:p.s<.03}}
+      const flicker=.55+.45*Math.sin(this.phase*6+p.seed*90);return {size:.75*(1+this.bands.high*.3*flicker),alpha:.25+flicker*.45+this.activity*.1,white:false}}
     render(){
       if(this.glState)return this.renderGl();
       if(!this.context)return;const ctx=this.context;ctx.clearRect(0,0,this.width,this.height);if(!this.sprites.length)return;
@@ -153,7 +155,7 @@
       const state=this.glState,gl=state.gl;if(gl.isContextLost())return;gl.clear(gl.COLOR_BUFFER_BIT);if(!this.colors)return;
       const scale=(this.mobile?5:6.5)*1.25,visible=Math.round(this.particles.length*this.quality);
       if(!state.data||state.data.length<visible*FLOATS)state.data=new Float32Array(visible*FLOATS*1.25|0);const data=state.data,maxPoint=state.maxPoint/this.ratio;let o=0;
-      for(let i=0;i<visible;i++){const p=this.particles[i],look=this.look(p),c=this.colors[look.white?4:p.color];data[o++]=p.x;data[o++]=p.y;data[o++]=Math.min(maxPoint,scale*p.size*look.size);data[o++]=c[0];data[o++]=c[1];data[o++]=c[2];data[o++]=Math.min(1,look.alpha)}
+      for(let i=0;i<visible;i++){const p=this.particles[i],look=this.look(p),c=look.white?this.colors[4]:p.rgb||this.colors[p.color];data[o++]=p.x;data[o++]=p.y;data[o++]=Math.min(maxPoint,scale*p.size*look.size);data[o++]=c[0];data[o++]=c[1];data[o++]=c[2];data[o++]=Math.min(1,look.alpha)}
       gl.uniform2f(state.view,this.width,this.height);gl.uniform1f(state.ratio,this.ratio);gl.bufferData(gl.ARRAY_BUFFER,data.subarray(0,o),gl.DYNAMIC_DRAW);gl.drawArrays(gl.POINTS,0,visible);
     }
     debug(){const average=list=>list.length?list.reduce((a,b)=>a+b,0)/list.length:0;return {renderer:this.glState?'webgl':'2d',locked:this.locked,period:Math.round(this.period),onsets:this.onsets.length,state:this.state,mode:this.state==='PLAYING'&&this.readAnalyser()?'analyser':'procedural',snakes:this.snakes.length,beats:this.beats,bpm:+this.bpm.toFixed(1),particles:this.particles.length,reducedMotion:this.reduced.matches,hidden:document.hidden,running:!!this.frame,frames:this.frames,canvas:{width:this.canvas.width,height:this.canvas.height,ratio:this.ratio,mobile:this.mobile},averageDrawMs:+average(this.costs).toFixed(2),quality:+this.quality.toFixed(2),observedFps:+(1000/(average(this.intervals)||Infinity)).toFixed(1),activity:+this.activity.toFixed(3),bands:{...this.bands}}}
