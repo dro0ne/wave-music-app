@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from accounts import AccountError, Accounts
+
 PORT = int(os.environ.get('PORT', '8000'))
 CACHE_DB = os.environ.get('CACHE_DB', '/data/cache.db')
 JAMENDO_CLIENT_ID = os.environ.get('JAMENDO_CLIENT_ID', '').strip()
@@ -29,6 +31,9 @@ STALE_LIMIT = 3 * 24 * 3600
 USER_AGENT = 'wave-music-cache/1.0'
 MAX_URL = 2048
 LIB_DB = os.environ.get('LIB_DB', '/music/library.db')
+ACCOUNTS_DB = os.environ.get('ACCOUNTS_DB', '/data/accounts.db')
+MAX_BODY = 2 * 1024 * 1024
+accounts = None
 LIBRARY_FIELDS = 'id, title, artist, album, tags, duration, downloads, license, permalink, artwork, file'
 
 HOUR = 3600
@@ -200,6 +205,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/health':
             body = json.dumps({'ok': True, 'jamendo': bool(JAMENDO_CLIENT_ID), 'cached': cache.count(), 'library': library_count()}).encode()
             return self.send(200, body)
+        if path == '/api/account/me':
+            return self.account(lambda body, token: accounts.me(token), read_body=False)
         if path == '/api/library/tracks':
             try:
                 body = json.dumps({'data': library_tracks(query)}, ensure_ascii=False).encode()
@@ -213,6 +220,53 @@ class Handler(BaseHTTPRequestHandler):
             log(f'error {path}: {error!r}')
             return self.send(500, b'{"error":"internal"}')
         self.send(status, body, state)
+
+    # Accounts: POST register/login/logout, GET me, PUT state/profile. The token comes as "Authorization: Bearer".
+    ACCOUNT_ROUTES = {
+        ('POST', '/api/account/register'): lambda self, body, token: accounts.register(body.get('name'), body.get('password'), self.client()),
+        ('POST', '/api/account/login'): lambda self, body, token: accounts.login(body.get('name'), body.get('password'), self.client()),
+        ('POST', '/api/account/logout'): lambda self, body, token: accounts.logout(token),
+        ('PUT', '/api/account/state'): lambda self, body, token: accounts.save_state(token, body.get('state')),
+        ('PUT', '/api/account/profile'): lambda self, body, token: accounts.update_profile(token, body),
+    }
+
+    def do_POST(self):
+        self.route_account('POST')
+
+    def do_PUT(self):
+        self.route_account('PUT')
+
+    def route_account(self, method):
+        handler = self.ACCOUNT_ROUTES.get((method, self.path.partition('?')[0]))
+        if not handler:
+            return self.send(404, b'{"error":"not found"}')
+        self.account(lambda body, token: handler(self, body, token))
+
+    def client(self):
+        # nginx is the only peer, so the real address comes from the header it sets.
+        return self.headers.get('X-Real-IP') or self.client_address[0]
+
+    def account(self, action, read_body=True):
+        auth = self.headers.get('Authorization', '')
+        token = auth[7:].strip() if auth.startswith('Bearer ') else ''
+        try:
+            body = {}
+            if read_body:
+                length = int(self.headers.get('Content-Length') or 0)
+                if length > MAX_BODY:
+                    raise AccountError(413, 'too_big', 'Слишком большой запрос')
+                body = json.loads(self.rfile.read(length) or b'{}') if length else {}
+                if not isinstance(body, dict):
+                    raise AccountError(400, 'bad_request', 'Неверный запрос')
+            result = action(body, token)
+            return self.send(200, json.dumps(result, ensure_ascii=False).encode())
+        except AccountError as error:
+            return self.send(error.status, json.dumps({'error': error.code, 'message': error.message}, ensure_ascii=False).encode())
+        except (ValueError, json.JSONDecodeError):
+            return self.send(400, b'{"error":"bad_request"}')
+        except Exception as error:
+            log(f'account error {self.path}: {error!r}')
+            return self.send(500, b'{"error":"internal"}')
 
     def send(self, status, body, state=None):
         self.send_response(status)
@@ -229,8 +283,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global cache
+    global cache, accounts
     cache = Cache(CACHE_DB)
+    accounts = Accounts(ACCOUNTS_DB)
     server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
     server.daemon_threads = True
     log(f'listening on {PORT}, jamendo {"on" if JAMENDO_CLIENT_ID else "off"}, {cache.count()} cached')
