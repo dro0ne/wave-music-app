@@ -6,8 +6,8 @@
   // so after a few failed proxied requests that source goes direct for the rest of the session.
   const FAILS_BEFORE_DIRECT=3,fails={};
   let health=null;
-  const proxy={jamendo:false,available:false,
-    check(){if(!health)health=fetch('api/health',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{proxy.available=!!info?.ok;proxy.jamendo=!!info?.ok&&!!info.jamendo;return proxy.available});return health},
+  const proxy={jamendo:false,library:false,available:false,
+    check(){if(!health)health=fetch('api/health',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{proxy.available=!!info?.ok;proxy.jamendo=!!info?.ok&&!!info.jamendo;proxy.library=!!info?.ok&&info.library>0;return proxy.available});return health},
     route(url){for(const [name,re,to] of ROUTES)if(re.test(url))return (fails[name]||0)<FAILS_BEFORE_DIRECT?{name,url:url.replace(re,to)}:null;return null},
     // Uses the backend when it is there and answers; any failure falls back to the direct request.
     async fetch(url,options={}){let local=await proxy.check()&&proxy.route(url);if(local){try{let response=await fetch(local.url,options);if(response.ok){fails[local.name]=0;return response}fails[local.name]=(fails[local.name]||0)+1}catch(error){if(error.name==='AbortError')throw error;fails[local.name]=(fails[local.name]||0)+1}}return fetch(url,options)}};

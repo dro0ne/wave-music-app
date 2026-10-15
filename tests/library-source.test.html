@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<script>
+// The server is faked through fetch before the sources load, because api-proxy checks health on load.
+const calls=[];let libraryCount=2;
+window.fetch=async url=>{url=String(url);calls.push(url);const ok=body=>({ok:true,status:200,json:async()=>body});if(url==='api/health')return ok({ok:true,jamendo:false,library:libraryCount});if(url.startsWith('api/library/tracks'))return ok({data:[{id:'ia:alb/01.mp3',title:'Night Drive',artist:'Neon',album:'Synth Album',tags:'electronic,synthwave',duration:200,downloads:900,license:'CC BY-NC-SA 3.0',permalink:'https://archive.org/details/alb',artwork:'art',stream:'media/ia/alb/01.mp3'}]});return {ok:false,status:404}};
+</script>
+<script src="../recommendation-config.js"></script><script src="../genre-normalization.js"></script><script src="../sources/track-model.js"></script><script src="../sources/api-proxy.js"></script><script src="../sources/library-source.js"></script>
+<script src="library-source.test.js"></script>
