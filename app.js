@@ -1,5 +1,7 @@
 const WAVE_BUILD='desktop-wave-stage4-v1-20260929';
 window.WAVE_BUILD=WAVE_BUILD;
+// crypto.randomUUID exists only on HTTPS and localhost; the home server is opened as plain http://<ip>:18080.
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
 document.documentElement.dataset.build=WAVE_BUILD;
 console.info('WAVE BUILD:',WAVE_BUILD);
 const MOODS=[['Спокойствие','☁',64,'#7056db'],['Энергия','ϟ',124,'#e8643e'],['Мечтательно','☾',70,'#8b57d8'],['Фокус','◎',82,'#318d91'],['Романтика','♡',76,'#bb74b5'],['Вечеринка','✦',132,'#d64c9b']];
@@ -216,11 +218,11 @@ function fmt(value){const seconds=Number.isFinite(Number(value))&&Number(value)>
 window.waveFormatTime=fmt;
 const startupTraces=[];
 let startupTrace=null;
-function beginStartup(){startupTrace={id:crypto.randomUUID(),at:performance.now(),marks:{},candidates:new Map(),completed:false};startupMark('wave_click')}
+function beginStartup(){startupTrace={id:uuid(),at:performance.now(),marks:{},candidates:new Map(),completed:false};startupMark('wave_click')}
 function startupMark(phase,track=null){const trace=startupTrace;if(!trace||trace.completed)return;const now=performance.now(),key=track?playbackKey(track):null,candidatePhase=['candidate_selected','stream_validation_start','stream_validation_ok'].includes(phase);if(candidatePhase&&key){let marks=trace.candidates.get(key)||{};marks[phase]??=now;trace.candidates.set(key,marks);return}trace.marks[phase]??=now;performance.mark(`wave:${phase}`);performance.clearMarks(`wave:${phase}`);if(phase==='playing'){trace.completed=true;const m=trace.marks,span=(a,b)=>m[a]!=null&&m[b]!=null?Math.round((m[b]-m[a])*10)/10:null;startupTraces.push({id:trace.id,marks:Object.fromEntries(Object.entries(m).map(([k,v])=>[k,Math.round((v-trace.at)*10)/10])),clickToCandidateMs:span('wave_click','candidate_selected'),candidateToValidatedMs:span('candidate_selected','stream_validation_ok'),validatedToPlayMs:span('stream_validation_ok','play_called'),playToPlayingMs:span('play_called','playing'),totalMs:span('wave_click','playing')});if(startupTraces.length>20)startupTraces.shift()}}
 function startupChoose(track){if(startupTrace&&!startupTrace.completed)Object.assign(startupTrace.marks,startupTrace.candidates.get(playbackKey(track))||{})}
 window.waveStartupTimings=()=>startupTraces.slice();
-const playbackController={sessionId:waveSession.sessionId||(waveSession.sessionId=crypto.randomUUID()),contextRevision:0,transitionSequence:0,activeTransition:null,pendingNext:false,reservations:new Map(),reservationSequence:0,playbackSequence:0,mediaSequence:0,event:null,bindings:new Map(),events:[],confirmedStarts:[],operation:null};
+const playbackController={sessionId:waveSession.sessionId||(waveSession.sessionId=uuid()),contextRevision:0,transitionSequence:0,activeTransition:null,pendingNext:false,reservations:new Map(),reservationSequence:0,playbackSequence:0,mediaSequence:0,event:null,bindings:new Map(),events:[],confirmedStarts:[],operation:null};
 function playbackKey(track){return WaveTrackModel.sourceKey(track)}
 function samePlaybackRecording(a,b){return WaveTrackModel.samePlaybackRecording(a,b)}
 function bufferedAhead(element){if(!element?.buffered)return null;let p=Number(element.currentTime)||0;for(let i=0;i<element.buffered.length;i++)if(element.buffered.start(i)<=p&&element.buffered.end(i)>=p)return Math.max(0,element.buffered.end(i)-p);return 0}
@@ -259,7 +261,7 @@ function advanceBufferGeneration(reason,clearSlots=true){
   logPlayback('BUFFER_INVALIDATED',{reason});
 }
 function beginPlaybackEvent(track){
-  const event={id:playbackController.sessionId+':play:'+crypto.randomUUID(),track,confirmed:false,active:false,finalized:false,listenedSeconds:0,lastWallAt:null,lastPosition:null};
+  const event={id:playbackController.sessionId+':play:'+uuid(),track,confirmed:false,active:false,finalized:false,listenedSeconds:0,lastWallAt:null,lastPosition:null};
   playbackController.event=event;return event;
 }
 function sampleListening(binding){
