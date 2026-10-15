@@ -269,7 +269,7 @@ html{overflow-x:clip}
 .wave-orb:hover .orb-core{border-color:#b9ff4b66}
 .wave-orb:after{box-shadow:none;border-color:#ffffff10}
 /* Night sky behind everything (starfield.js) and a second slow glow so the background never stands still. */
-.star-canvas{position:fixed;inset:0;z-index:-2;width:100vw;height:100vh;pointer-events:none}
+.star-canvas{position:fixed;inset:0;z-index:-2;width:100vw;height:100vh;pointer-events:none;will-change:transform;transform:translateZ(0)}
 .star-canvas[hidden]{display:none}
 .ambient-glow{animation:ambient-drift 18s ease-in-out infinite alternate}
 @keyframes ambient-drift{0%{translate:0 0;rotate:0deg;scale:1}35%{translate:-5% 6%;rotate:12deg;scale:1.06}70%{translate:-9% 2%;rotate:26deg;scale:.97}100%{translate:-4% 10%;rotate:34deg;scale:1.08}}
@@ -309,3 +309,18 @@ html{overflow-x:clip}
   .wave-orb,.wave-orb.icon-swap{width:156px;height:156px}.orb-core{width:96px;height:96px}.orb-core small{display:none}
   .hero{margin-bottom:10px;padding:2px 0}
 }
+/* Orb in the site's own style: a thin lime ring with a soft green halo instead of the rainbow; it breathes while
+   music plays. Only opacity and scale animate, so it stays on the compositor. */
+.wave-orb:before{inset:8%;background:none;border:1.5px solid #b9ff4bd0;-webkit-mask:none;mask:none;filter:none;box-shadow:0 0 22px #b9ff4b45,inset 0 0 20px #b9ff4b1c;animation:none}
+.orb-glow{width:100%;height:100%;background:radial-gradient(closest-side,transparent 70%,#b9ff4b24 84%,transparent 100%);-webkit-mask:none;mask:none;filter:none;opacity:1;animation:none}
+.wave-orb:after{border-color:#ffffff12}
+.orb-ring{border-color:#ffffff12}
+body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-breathe 2.6s ease-in-out infinite}
+@keyframes orb-breathe{50%{scale:1.03;opacity:.7}}
+/* Background glows as plain gradients: a 200px blur on a 700px element is among the most expensive things to
+   repaint and made scrolling stutter on phones. They still drift, but only by transform. */
+.ambient-glow{filter:none;background:radial-gradient(closest-side,#7654ff3d,#44d7d018 55%,transparent);opacity:1;will-change:transform}
+.ambient-glow-2{filter:none;background:radial-gradient(closest-side,#44d7d02e,#e557a812 55%,transparent);opacity:1}
+/* The particles' container had a colour filter left from the old wave picture; on an animated canvas it cost a full repaint every frame. */
+.wavefield{filter:none!important;animation:none!important;-webkit-mask-image:none!important;mask-image:none!important}
+@media(prefers-reduced-motion:reduce){body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:none}}

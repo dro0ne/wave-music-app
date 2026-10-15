@@ -38,7 +38,9 @@
       this.state='IDLE';this.mood='Спокойствие';this.frame=0;this.last=0;this.phase=0;this.activity=0;this.bands={bass:0,mid:0,high:0,rms:0};this.frames=0;this.costs=[];this.intervals=[];this.reduced=root.matchMedia('(prefers-reduced-motion: reduce)');
       this.particles=[];this.snakes=[];this.beats=0;this.beatPulse=0;this.kick=0;this.beatClock=0;this.bpm=90;this.flux=[];this.onsets=[];this.lastOnset=0;this.period=0;this.nextBeatAt=0;this.locked=false;this.quality=1;this.sprites=[];this.center={x:0,y:0,r:100};
       this.resize=()=>{if(!this.context)return;const rect=canvas.getBoundingClientRect();this.width=Math.max(1,rect.width);this.height=Math.max(1,rect.height);this.mobile=this.width<768;this.ratio=Math.min(root.devicePixelRatio||1,this.mobile?1.25:1.5);canvas.width=Math.round(this.width*this.ratio);canvas.height=Math.round(this.height*this.ratio);if(this.glState)this.context.viewport(0,0,canvas.width,canvas.height);else this.context.setTransform(this.ratio,0,0,this.ratio,0,0);const count=this.mobile?600:900;if(this.particles.length!==count)this.spawn(count);this.locate();this.render();this.resume()};
-      this.enabled=true;this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context||!this.enabled)return;
+      this.enabled=true;this.tick=now=>{this.frame=0;if(document.hidden||this.reduced.matches||!this.context||!this.enabled||!this.onScreen)return;
+        // While the page is being scrolled the snakes hold still, so scrolling gets the whole frame budget.
+        if(now-this.scrolled<150){this.last=0;this.frame=requestAnimationFrame(this.tick);return}
         // Phones run at 30 fps; a frame is skipped only when it comes clearly early, so 60 Hz screens never judder.
         const target=this.mobile?30:60;if(target<50&&this.last&&now-this.last<1000/target*.75){this.frame=requestAnimationFrame(this.tick);return}
         const dt=Math.min(.1,this.last?(now-this.last)/1000:1/60);if(this.last){this.intervals.push(now-this.last);if(this.intervals.length>180)this.intervals.shift()}this.last=now;
@@ -46,7 +48,9 @@
         if(this.frames%60===0){if(this.cost>9)this.quality=Math.max(.4,this.quality*.9);else if(this.cost<5)this.quality=Math.min(1,this.quality*1.04)}
         this.frames++;this.frame=requestAnimationFrame(this.tick)};
       this.motion=()=>{this.suspend();this.last=0;if(this.reduced.matches){this.activity=0;for(const key of Object.keys(this.bands))this.bands[key]=0;this.settle();this.render()}else this.resume()};
-      root.addEventListener('resize',this.resize);if(this.glState){canvas.addEventListener('webglcontextlost',event=>event.preventDefault());canvas.addEventListener('webglcontextrestored',()=>{this.glState=createGl(canvas);this.context=this.glState?.gl||null;this.resize()})}this.reduced.addEventListener?.('change',this.motion);document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.settle();
+      root.addEventListener('resize',this.resize);if(this.glState){canvas.addEventListener('webglcontextlost',event=>event.preventDefault());canvas.addEventListener('webglcontextrestored',()=>{this.glState=createGl(canvas);this.context=this.glState?.gl||null;this.resize()})}this.reduced.addEventListener?.('change',this.motion);
+      // Nothing to draw once the orb has scrolled out of view: the animation stops until it comes back.
+      this.scrolled=0;root.addEventListener('scroll',()=>{this.scrolled=performance.now()},{passive:true});this.onScreen=true;if(this.anchor&&root.IntersectionObserver){new IntersectionObserver(entries=>{this.onScreen=entries.at(-1).isIntersecting;this.onScreen?this.resume():this.suspend()},{rootMargin:'120px'}).observe(this.anchor)}document.addEventListener('visibilitychange',()=>document.hidden?this.suspend():this.resume());this.palette();this.resize();this.settle();
     }
     spawn(count){const old=this.particles;this.particles=Array.from({length:count},(_,i)=>old[i]||{x:rand(0,this.width||800),y:rand(0,this.height||600),vx:0,vy:0,seed:Math.random(),size:rand(.55,1.35),color:i%4});this.cast()}
     // Splits the particles into snakes (head first) and fireflies with their own orbit, speed and colour.
@@ -73,7 +77,7 @@
     setState(state){if(this.state!==state){this.costs=[];this.intervals=[];this.last=0}this.state=state;this.resume()}
     setMood(mood){if(mood===this.mood)return;this.mood=mood;this.palette();this.cast();this.burst(.4);this.render()}
     suspend(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.last=0}
-    resume(){if(!this.context||!this.enabled||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
+    resume(){if(!this.context||!this.enabled||!this.onScreen||document.hidden||this.reduced.matches||this.frame)return;this.frame=requestAnimationFrame(this.tick)}
     // The particles can be switched off in settings; the canvas is hidden and stops drawing entirely.
     setEnabled(on){this.enabled=!!on;if(this.canvas)this.canvas.hidden=!this.enabled;if(this.enabled){this.last=0;this.resume()}else this.suspend()}
     // On every beat the snakes lunge forward and their heads leap off the ring.
