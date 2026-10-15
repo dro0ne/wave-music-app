@@ -280,3 +280,32 @@ html{overflow-x:clip}
 .backdrop-switches .switch{justify-self:auto}
 @media(max-width:767px){.ambient-glow-2{width:420px;height:420px;opacity:.07}.backdrop-setting{grid-template-columns:1fr}.backdrop-switches{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){.ambient-glow,.ambient-glow-2{animation:none}}
+/* Compact phone layout: the hero question moves to the mood section, so the first screen shows the wave
+   button and the moods; headings, cards and controls are a size smaller. Desktop keeps its hero. */
+.phone-text{display:none}
+@media(max-width:767px){
+  .wide-text{display:none}.phone-text{display:inline}.heading-hint.phone-text{display:block}
+  .site-header{height:58px}.top-brand{font-size:20px;gap:8px}.top-brand svg{width:30px;height:30px}
+  label:has(#musicSearch){height:44px;padding:0 16px}
+  .hero{min-height:0;display:flex;align-items:center;justify-content:center;margin:2px 0 16px;padding:6px 0;border:0;border-radius:0;background:none;box-shadow:none}
+  .hero:before,.hero-copy{display:none}
+  .wave-orb,.wave-orb.icon-swap{width:196px;height:196px;margin:0 auto}
+  .orb-core{width:116px;height:116px}.orb-core i{width:22px;height:22px;margin-bottom:5px;font-size:21px}
+  .orb-core strong{font-size:15px}.orb-core small{font-size:9.5px}
+  .content-block{margin-bottom:24px}.genre-block{padding-top:16px}
+  .section-heading{margin-bottom:12px;gap:10px}.section-heading p{margin-bottom:5px;font-size:9px;letter-spacing:1.4px}
+  .section-heading h2{font-size:20px;line-height:1.15;letter-spacing:-.3px}
+  .heading-hint{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}
+  .show-moods{height:36px;font-size:11px}
+  .moods{gap:10px}
+  .mood,.mood:nth-child(n+4),.mood:last-child{flex-basis:164px;min-height:104px;padding:13px 14px;border-radius:15px}
+  .mood span{font-size:14px}.mood small{font-size:11px}
+  .genre{min-height:32px;padding:5px 10px;font-size:11.5px}
+  .setting-row{padding:13px 0;gap:10px}.setting-row strong{font-size:14px}.setting-row p{font-size:12px}
+  .genre-search{height:44px;padding:0 16px}
+}
+/* Short phones (iPhone SE and the like): a smaller button keeps the moods on the first screen. */
+@media(max-width:767px) and (max-height:700px){
+  .wave-orb,.wave-orb.icon-swap{width:156px;height:156px}.orb-core{width:96px;height:96px}.orb-core small{display:none}
+  .hero{margin-bottom:10px;padding:2px 0}
+}
