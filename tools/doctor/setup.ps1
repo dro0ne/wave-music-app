@@ -1,9 +1,12 @@
-# One-time setup for the doctor: a private Python environment and the three browser engines
+﻿# One-time setup for the doctor: a private Python environment and the three browser engines
 # (Chromium, WebKit = Safari, Firefox) inside tools/doctor, nothing installed system-wide.
-$ErrorActionPreference = 'Stop'
+# Native tools write notices to stderr, so success is judged by exit codes, not by stderr.
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 python -m venv "$here\.venv"
-& "$here\.venv\Scripts\python.exe" -m pip install --quiet -r "$here\requirements.txt"
+if ($LASTEXITCODE) { throw 'Не удалось создать окружение Python' }
+& "$here\.venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r "$here\requirements.txt"
+if ($LASTEXITCODE) { throw 'Не удалось поставить playwright' }
 $env:PLAYWRIGHT_BROWSERS_PATH = "$here\.browsers"
 & "$here\.venv\Scripts\python.exe" -m playwright install chromium webkit firefox
+if ($LASTEXITCODE) { throw 'Не удалось скачать браузеры' }
 Write-Host "Готово. Запуск: tools\doctor\doctor.ps1"
