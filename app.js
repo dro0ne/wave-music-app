@@ -63,7 +63,7 @@ function choices(){
 }
 $('#showMoods').onclick=()=>{const expanded=$('#moods').classList.toggle('expanded');$('#showMoods').setAttribute('aria-expanded',String(expanded));$('#showMoods').innerHTML=(expanded?'Свернуть':'Показать все')+' <span aria-hidden="true">›</span>'};
 $('#moods').onclick=e=>{let b=e.target.closest('[data-mood]');if(b&&state.mood!==b.dataset.mood){state.mood=b.dataset.mood;WaveRecommendation.updateWavePreferences(waveSession,{mood:state.mood});save();choices();invalidateNextBuffer('mood');void loadCatalog(true);toast('Настроение обновлено — повлияет на следующий трек')}};
-$('#genres').onclick=e=>{let b=e.target.closest('[data-genre]');if(!b)return;let g=b.dataset.genre,adding=!state.genres.includes(g);state.genres=adding?[...state.genres,g]:state.genres.filter(x=>x!==g);state.genreIntentStrength=state.genres.length?1:0;if(adding){state.genreUsageCount[g]=(state.genreUsageCount[g]||0)+1;state.recentGenreSelections=[g,...state.recentGenreSelections.filter(x=>x!==g)].slice(0,20)}save();choices();invalidateNextBuffer('genre');void loadCatalog(true);toast('Жанры обновлены — повлияют на следующий трек')};
+$('#genres').onclick=e=>{let b=e.target.closest('[data-genre]');if(!b)return;let g=b.dataset.genre,adding=!state.genres.includes(g);state.genres=adding?[...state.genres,g]:state.genres.filter(x=>x!==g);state.genreIntentStrength=state.genres.length?1:0;if(adding){state.genreUsageCount[g]=(state.genreUsageCount[g]||0)+1;state.recentGenreSelections=[g,...state.recentGenreSelections.filter(x=>x!==g)].slice(0,20)}save();choices();renderImports();invalidateNextBuffer('genre');void loadCatalog(true);toast('Жанры обновлены — повлияют на следующий трек')};
 $('#genreSearch').oninput=e=>{genreQuery=e.target.value.trim().toLocaleLowerCase('ru');choices()};
 function renderMusicResults(message=''){
   let box=$('#musicResults');
@@ -103,6 +103,15 @@ async function fetchArchiveTracks(query){
   return items.filter(Boolean)
 }
 let catalogTask=null,catalogRequest=0,catalogGenreLevel='ALL';
+// No genre chosen: the wave also fetches from the strongest genres of the taste (likes, listening, imports), so a
+// taste learned from another service brings its kind of music in instead of only reordering whatever came.
+function tasteGenres(ignoreSelection=false){if(state.genres.length&&!ignoreSelection)return [];const t=state.taste||{},strong=bag=>Object.entries(bag||{}).filter(([,v])=>v>=1).sort((a,b)=>b[1]-a[1]),subs=strong(t.subgenres),families=strong(t.genres),pick=[],add=label=>{if(label&&!pick.includes(label))pick.push(label)};
+  tasteLabels||=GENRE_PAIRS.map(([,label])=>[label,WaveGenre.normalizeGenre(label)]);
+  if(families[0]?.[0]==='hiphop'&&subs.some(([s])=>s==='russian'))add('Russian Rap');
+  for(const [sub] of subs)if(sub!=='russian')add(tasteLabels.find(([,n])=>n.subgenres[0]===sub)?.[0]);
+  for(const [family] of families)add(tasteLabels.find(([,n])=>n.normalizedGenre===family&&!n.subgenres.length)?.[0]);
+  return pick.slice(0,3)}
+let tasteLabels=null;
 async function loadCatalog(force=false,merge=false,quiet=false,firstBatch=false){
   if(catalog.length&&!force&&Date.now()-catalogLoadedAt<15*60*1000)return catalog;
   const revision=playbackController.contextRevision;
@@ -113,7 +122,7 @@ async function loadCatalog(force=false,merge=false,quiet=false,firstBatch=false)
   const publish=(tracks,emergency=false)=>{if(!valid())return;combined=sourceManager.deduplicate([...combined,...tracks.map(t=>normalize(t,m))]);const selection=WaveGenre.selectPool(combined,genres,{emergency});if(selection.tracks.length){catalog=sourceManager.deduplicate(selection.tracks);catalogGenreLevel=selection.level;catalogLoadedAt=Date.now();if(!published){published=true;firstResolve(catalog)}}};
   const complete=Promise.resolve().then(async()=>{
     try{
-      const source=await sourceManager.getCatalog({genres,mood:state.mood,onBatch:tracks=>publish(tracks)});if(!valid()){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}publish(source);
+      const source=await sourceManager.getCatalog({genres,mood:state.mood,taste:tasteGenres(),onBatch:tracks=>publish(tracks)});if(!valid()){logPlayback('STALE_RESULT_DISCARDED',{resultType:'catalog'});return catalog}publish(source);
       if(catalog.length<12||!published){const queries=[...new Set(genres.flatMap(g=>WaveGenre.queriesFor(g)))].slice(0,6);const settled=await Promise.allSettled(queries.map(q=>sourceManager.searchTracks(q)));for(const result of settled)if(result.status==='fulfilled')publish(result.value)}
       if(!published&&combined.length&&valid()){catalog=[];catalogGenreLevel='NONE';catalogLoadedAt=Date.now();if(!quiet)toast('По выбранным жанрам сейчас ничего не нашлось — попробуй другой жанр');return catalog}
       if(!published&&valid()){catalog=fallbackQueue().map(t=>normalize(t,m));catalogGenreLevel='ALL';catalogLoadedAt=Date.now();if(!quiet)toast('Нет связи — включён локальный демо-режим')}
@@ -577,9 +586,13 @@ async function renderAccount(){let box=$('#accountBox'),account=window.WaveAccou
 // Taste import: a public playlist or a pasted list from another service seeds the taste (taste-import.js).
 const tracksWord=n=>`${n} ${n%10===1&&n%100!==11?'трек':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'трека':'треков'}`;
 const FAMILY_NAMES={hiphop:'рэп и хип-хоп',pop:'поп',rock:'рок',indie:'инди',alternative:'альтернатива',electronic:'электроника',metal:'метал',punk:'панк',rnb:'R&B',soul:'соул',jazz:'джаз',blues:'блюз',dance:'дэнс',classical:'классика',folk:'фолк',country:'кантри',reggae:'регги',latin:'латино',funk:'фанк',ambient:'эмбиент',chill:'чилл',lofi:'lo-fi',soundtrack:'саундтреки',experimental:'эксперимент',spoken:'разговорное',kids:'детское',instrumental:'инструментал',world:'мировая'};
-function renderImports(){let box=$('#importList');if(!box||!window.WaveTasteImport)return;box.replaceChildren(...(state.tasteImports||[]).map(item=>{let remove=el('button',{type:'button',className:'account-secondary',textContent:'Убрать'});remove.onclick=()=>{WaveTasteImport.remove(state,item.key);afterTasteChange();$('#importStatus').textContent=`«${item.title}» убран из вкуса`};
+function renderImports(){let box=$('#importList');if(!box||!window.WaveTasteImport)return;
+  // One tap to listen by the imported taste: picks its strongest genres in place of the current selection.
+  let suggested=(state.tasteImports||[]).length?tasteGenres(true).map(en=>GENRE_PAIRS.find(([,label])=>label===en)?.[0]).filter(Boolean):[],same=suggested.length&&suggested.length===state.genres.length&&suggested.every(g=>state.genres.includes(g)),use=null;
+  if(suggested.length&&!same){use=el('button',{type:'button',className:'account-primary import-use',textContent:`Включить жанры из вкуса: ${suggested.join(', ')}`});use.onclick=()=>{state.genres=suggested;state.genreIntentStrength=1;save();choices();invalidateNextBuffer('genre');void loadCatalog(true);renderImports();toast('Жанры из вкуса включены — повлияют на следующий трек')}}
+  box.replaceChildren(...(use?[use]:[]),...(state.tasteImports||[]).map(item=>{let remove=el('button',{type:'button',className:'account-secondary',textContent:'Убрать'});remove.onclick=()=>{WaveTasteImport.remove(state,item.key);afterTasteChange();$('#importStatus').textContent=`«${item.title}» убран из вкуса`};
   let genres=item.topGenres.map(g=>FAMILY_NAMES[g]||g).join(', '),artists=item.topArtists.slice(0,6).join(', ');return el('div',{className:'import-item'},el('div',{},el('strong',{textContent:['text','csv'].includes(item.service)?item.title:`${item.title} · ${WaveTasteImport.serviceName(item.service)}`}),el('small',{textContent:`${tracksWord(item.count)}${item.partial?' (первые из плейлиста)':''}${genres?' · '+genres:''}`}),artists?el('small',{textContent:'Чаще всего: '+artists}):null),remove)}))}
-function afterTasteChange(){WaveRecommendation.invalidateScores?.();save();renderImports();renderProfile();invalidateNextBuffer('feedback')}
+function afterTasteChange(){WaveRecommendation.invalidateScores?.();catalogLoadedAt=0;save();renderImports();renderProfile();invalidateNextBuffer('feedback')}
 async function runImport(body,url){let status=$('#importStatus'),buttons=document.querySelectorAll('#importSection button');status.classList.remove('error');status.textContent=url?'Читаю плейлист… большой может занять до минуты':'Разбираю список…';buttons.forEach(b=>b.disabled=true);
   try{let result=await WaveTasteImport.fetchImport(body),record=WaveTasteImport.apply(state,result,url);afterTasteChange();status.textContent=`Готово: ${tracksWord(record.count)} из «${record.title}». Волна уже подбирает с учётом этого вкуса`;return true}
   catch(error){status.classList.add('error');status.textContent=error.message;return false}finally{buttons.forEach(b=>b.disabled=false)}}

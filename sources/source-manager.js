@@ -42,8 +42,9 @@
       };
       const task=run();page.inFlight=task;try{return await task}finally{if(page.inFlight===task)page.inFlight=null}
     }
-    async getCatalog({genres=[],mood=null,onBatch=null}={}){
-      const context=genres.slice().sort().join('|'),sources=this.enabled(),moodMethods=mood?(genres.length?genres.slice(0,2):[null]).map(g=>['getTracksByMood',[mood,g]]):[],methods=[...moodMethods,...genres.slice(0,4).map(g=>['getTracksByGenre',[g]]),['getTrendingTracks',[]],['getLatestTracks',[]]],cycle={id:++this.catalogSequence,context,sources:{},pages:[]};
+    async getCatalog({genres=[],mood=null,taste=[],onBatch=null}={}){
+      // taste: the listener's strongest genres, fetched alongside when no genre is chosen (the pool stays unfiltered).
+      const tasteGenres=genres.length?[]:taste.slice(0,3),context=genres.slice().sort().join('|')+(tasteGenres.length?'#'+tasteGenres.join('|'):''),sources=this.enabled(),moodMethods=mood?(genres.length?genres.slice(0,2):[null,...tasteGenres]).map(g=>['getTracksByMood',[mood,g]]):[],methods=[...moodMethods,...[...genres.slice(0,4),...tasteGenres].map(g=>['getTracksByGenre',[g]]),['getTrendingTracks',[]],['getLatestTracks',[]]],cycle={id:++this.catalogSequence,context,sources:{},pages:[]};
       this.catalogCycles.push(cycle);if(this.catalogCycles.length>20)this.catalogCycles.shift();
       const jobs=methods.flatMap(([method,args])=>sources.filter(source=>typeof source[method]==='function').map(async source=>{const result=await this.catalogPage(source,method,args,context);const {tracks,...safe}=result;cycle.pages.push(safe);let stats=cycle.sources[source.id]||{received:0,normalized:0,deduped:0,fetches:0};for(const field of ['received','normalized','deduped'])stats[field]+=result[field]||0;if(!result.skipped)stats.fetches++;cycle.sources[source.id]=stats;onBatch?.(tracks);return tracks}));
       const settled=await Promise.allSettled(jobs),tracks=this.deduplicate(settled.filter(x=>x.status==='fulfilled').flatMap(x=>x.value));cycle.finalCount=tracks.length;return tracks;
