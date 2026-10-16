@@ -3,7 +3,8 @@
 Sits behind nginx at /api/. Proxies the catalog requests the site makes to Audius and Jamendo,
 keeps their JSON in SQLite so repeated waves start fast and survive an upstream outage, and adds
 API keys that must not live in the browser. Upstream audio streams are never proxied or stored.
-It also lists the server's own Creative Commons library (filled by library.py, files served by nginx).
+It also lists the server's own Creative Commons library (filled by library.py, files served by nginx)
+and reads public playlists from other services for the taste import (importers.py, track lists only).
 Standard library only, so the stock python image runs it without a build step.
 """
 import json
@@ -19,6 +20,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from accounts import AccountError, Accounts
+from importers import PlaylistImportError, import_url, parse_text
 
 PORT = int(os.environ.get('PORT', '8000'))
 CACHE_DB = os.environ.get('CACHE_DB', '/data/cache.db')
@@ -275,7 +277,39 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.partition('?')[0] == '/api/telemetry':
             return self.receive_telemetry()
+        if self.path.partition('?')[0] == '/api/import':
+            return self.receive_import()
         self.route_account('POST')
+
+    # Taste import: {"url": "<public playlist link>"} or {"text": "<pasted list or CSV>"} → the track list.
+    IMPORT_LIMIT, IMPORT_WINDOW = 12, 600
+    import_hits = {}
+    import_lock = threading.Lock()
+
+    def receive_import(self):
+        now, client = time.time(), self.client()
+        with self.import_lock:
+            hits = [t for t in self.import_hits.get(client, []) if now - t < self.IMPORT_WINDOW]
+            if len(hits) >= self.IMPORT_LIMIT:
+                return self.send(429, json.dumps({'error': 'rate_limited', 'message': 'Слишком много импортов, подожди несколько минут'}, ensure_ascii=False).encode())
+            self.import_hits[client] = hits + [now]
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            if not 0 < length <= 5 * 1024 * 1024:
+                raise PlaylistImportError(413, 'too_big', 'Слишком большой запрос')
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise PlaylistImportError(400, 'bad_request', 'Неверный запрос')
+            result = parse_text(body['text']) if isinstance(body.get('text'), str) and body['text'].strip() else import_url(body.get('url'))
+            log(f"import {result['service']}: {result['count']} tracks")
+            return self.send(200, json.dumps(result, ensure_ascii=False).encode())
+        except PlaylistImportError as error:
+            return self.send(error.status, json.dumps({'error': error.code, 'message': error.message}, ensure_ascii=False).encode())
+        except (ValueError, json.JSONDecodeError):
+            return self.send(400, b'{"error":"bad_request"}')
+        except Exception as error:
+            log(f'import error: {error!r}')
+            return self.send(500, b'{"error":"internal"}')
 
     def receive_telemetry(self):
         try:

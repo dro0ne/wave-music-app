@@ -43,7 +43,7 @@ services:
     pull_policy: never
     container_name: wave-api
     restart: unless-stopped
-    # -E -s: ignore PYTHON* variables and user site-packages; the script folder stays importable for accounts.py.
+    # -E -s: ignore PYTHON* variables and user site-packages; the script folder stays importable for accounts.py and importers.py.
     command: ["python", "-E", "-s", "/app/api.py"]
     env_file:
       - path: .env
@@ -59,6 +59,10 @@ services:
       - type: bind
         source: ./accounts.py
         target: /app/accounts.py
+        read_only: true
+      - type: bind
+        source: ./importers.py
+        target: /app/importers.py
         read_only: true
       - api-cache:/data
       - music:/music

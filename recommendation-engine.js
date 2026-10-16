@@ -137,5 +137,5 @@
     context.session.currentTrackId=idOf(chosen.track);if(!context.session.seedTrackId)context.session.seedTrackId=context.session.currentTrackId;
     return chosen;
   }
-  global.WaveRecommendation={popularityScore,createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,isRecentlyPlayed,eligibleCandidates,sampleCandidatesWithoutReplacement,getWeightedCandidateOrder,getRankedCandidates,getNextTrack,idOf};
+  global.WaveRecommendation={invalidateScores:()=>{scoreEpoch++},popularityScore,createSession,updateWavePreferences,recordEvent,moodScore,userNoveltyScore,releaseNoveltyScore,scoreTrack,isRecentlyPlayed,eligibleCandidates,sampleCandidatesWithoutReplacement,getWeightedCandidateOrder,getRankedCandidates,getNextTrack,idOf};
 })(window);
