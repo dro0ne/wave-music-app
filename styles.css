@@ -382,3 +382,6 @@ body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-bre
 [data-source="jamendo"]{--source-logo:url(assets/sources/jamendo.svg)}
 [data-source="soundcloud"]{--source-logo:url(assets/sources/soundcloud.svg)}
 [data-source="library"]{--source-logo:url(assets/sources/library.svg)}
+/* The placeholder glyph stays under real artwork otherwise (renderPlayerUI toggles .has-artwork). */
+[data-player-artwork].has-artwork{color:transparent}
+[data-player-artwork].has-artwork>*{visibility:hidden}

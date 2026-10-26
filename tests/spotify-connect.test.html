@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<script>
+// A phone: the SDK must not be used, so window.Spotify is absent and any attempt to load it is recorded.
+// The Web API is faked: devices, the player state Spotify reports, search pages and liked songs.
+Object.defineProperty(navigator,'userAgent',{value:'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36',configurable:true});
+const FAKE={api:[],devices:[{id:'PHONE',name:'Pixel 7',type:'Smartphone',is_active:false,is_restricted:false}],player:null,me:{product:'premium',id:'me',display_name:'Me',country:'EE'},searchTotal:25,liked:7,scripts:[]};
+// Widevine is there, so only the phone check keeps the Wave from loading the SDK; a load attempt is recorded and answered at once.
+Object.defineProperty(navigator,'requestMediaKeySystemAccess',{value:async()=>({}),configurable:true});
+const realAppend=Element.prototype.append;Element.prototype.append=function(...nodes){for(const n of nodes)if(n?.tagName==='SCRIPT'){FAKE.scripts.push(n.src);setTimeout(()=>window.onSpotifyWebPlaybackSDKReady?.())}return realAppend.apply(this,nodes.filter(n=>n?.tagName!=='SCRIPT'))};
+const fakeTrack=(i,q='')=>({id:'t'+i,name:`${q} ${i}`,uri:'spotify:track:t'+i,duration_ms:180000,artists:[{name:'Artist '+i}],album:{name:'Al',images:[{url:'https://i/'+i}]}});
+window.WaveSpotify={connected:()=>true,token:async()=>'T',api:async(path,init={})=>{FAKE.api.push([path,init.method||'GET',init.body||null]);const url=new URL(path,'https://api.spotify.com/v1/'),limit=+url.searchParams.get('limit'),offset=+url.searchParams.get('offset');
+  if(path==='/me')return FAKE.me;
+  if(path==='/me/player/devices')return {devices:FAKE.devices};
+  if(path==='/me/player')return FAKE.player;
+  if(path.startsWith('/search')){const n=Math.max(0,Math.min(limit,FAKE.searchTotal-offset));return {tracks:{items:Array.from({length:n},(_,i)=>fakeTrack(offset+i,url.searchParams.get('q')))}}}
+  if(path.startsWith('/me/tracks')){const n=Math.max(0,Math.min(limit,FAKE.liked-offset));return {items:Array.from({length:n},(_,i)=>({track:fakeTrack(100+offset+i)}))}}
+  return null}};
+</script>
+<script src="../genre-normalization.js"></script><script src="../sources/track-model.js"></script>
+<script src="../sources/source-config.js"></script><script src="../sources/spotify-player.js"></script><script src="../sources/spotify-source.js"></script><script src="../sources/source-manager.js"></script>
+<script src="spotify-connect.test.js"></script>
