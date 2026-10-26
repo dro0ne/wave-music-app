@@ -52,10 +52,15 @@ Discord Rich Presence,integrations,could,yes,no,только десктоп
 Android-сборка с фоновым воспроизведением,platform,must,yes,no,Capacitor или TWA
 PWA с установкой,platform,should,no,no,в Волне есть manifest и sw.js; у Dotify нет
 Моя волна: бесконечный поток по вкусу,home,could,yes,no,ядро Волны; у Волны уже своя версия
+Свой порядок источников для трека (файлы → Audius → Spotify → YouTube),sources,must,no,no,своё у Волны; результат сопоставления кэшируется
+Spotify: вход и воспроизведение через Web Playback SDK,sources,must,yes,no,Premium пользователя; OAuth PKCE без сервера; у Dotify Spotify через прокси
+YouTube: официальный IFrame-плеер как запасной источник,sources,should,yes,no,ключ Data API ограничить доменом
+Сопоставление импортированных треков с источниками,import,should,yes,no,название + артист + длительность
+Яндекс: проверить официальный iframe-виджет,sources,should,no,no,если играет целые треки для подписчика
 Проигрывать каталоги Spotify / Яндекса / VK / YouTube / Deezer,sources,must,yes,skip,нарушает условия сервисов и права на музыку; у Spotify обход защиты
 Скачивать треки в MP3 / FLAC из сервисов,offline,should,yes,skip,та же причина; офлайн только для своих файлов и разрешённых треков
 Встроенный прокси против блокировок,sources,should,yes,skip,обход блокировок; не нужен для легальных источников
-Поиск трека по звуку,search,could,yes,skip,нужна чужая база отпечатков; бесплатного легального API нет
+Поиск трека по звуку,search,could,yes,skip,легальные API платные (ACRCloud / AudD) и нужен сервер; отложено
 Друзья комнаты топ слушателей,social,could,yes,skip,вне выбранного среза; аудитория с нуля
 Уровни слава итоги месяца,social,could,yes,skip,вне выбранного среза
 Workshop: публикация пресетов и тем,social,could,yes,skip,вне выбранного среза
