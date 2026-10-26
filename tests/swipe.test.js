@@ -1,0 +1,16 @@
+// Runs inside the app (controller-fixture.js) with synthetic touch pointers on the real artwork and mini player.
+function installSwipe(){
+  window.swipe=async(selector,points,{pauseMs=0}={})=>{const target=document.querySelector(selector),fire=(type,[x,y])=>target.dispatchEvent(new PointerEvent(type,{pointerId:7,pointerType:'touch',isPrimary:true,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+    fire('pointerdown',points[0]);for(const point of points.slice(1))fire('pointermove',point);if(pauseMs)testClock.tick(pauseMs);fire('pointerup',points.at(-1));target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+    for(let i=0;i<30;i++)await new Promise(resolve=>queueMicrotask(resolve));testClock.tick(400)};
+}
+const swipeTest=(id,fn)=>test(id,{toString:()=>`async()=>{(${installSwipe})();return await (${fn})()}`});
+(async()=>{
+await swipeTest('swiping the artwork left plays the next track',async()=>{await start();await fillPlaybackBuffer();const before=current().id;await swipe('.full-artwork',[[300,400],[260,402],[180,405],[120,406]]);return {pass:current().id!==before&&playerState==='PLAYING'&&queue.length===2&&index===1,before,after:current().id,index}});
+await swipeTest('swiping right goes back to the previous track',async()=>{await start();await fillPlaybackBuffer();const first=current().id;await swipe('.full-artwork',[[300,400],[200,400],[120,400]]);const second=current().id;await swipe('.full-artwork',[[100,400],[180,400],[280,400]]);return {pass:second!==first&&current().id===first&&index===0,first,second,now:current().id}});
+await swipeTest('swiping right on the first track does nothing',async()=>{await start();const first=current().id;await swipe('.full-artwork',[[100,400],[180,400],[280,400]]);return {pass:current().id===first&&queue.length===1,now:current().id}});
+await swipeTest('a short slow drag springs back without switching',async()=>{await start();await fillPlaybackBuffer();const first=current().id;await swipe('.full-artwork',[[300,400],[285,400],[255,400]],{pauseMs:500});return {pass:current().id===first,now:current().id}});
+await swipeTest('a vertical drag is left to the page',async()=>{await start();await fillPlaybackBuffer();const first=current().id;await swipe('.full-artwork',[[300,300],[302,360],[305,480]]);return {pass:current().id===first,now:current().id}});
+await swipeTest('swiping the mini player switches the track and does not open the full player',async()=>{await start();await fillPlaybackBuffer();const first=current().id;await swipe('.mini-open',[[300,800],[220,800],[140,800]]);const opened=document.querySelector('#fullPlayer').classList.contains('open');document.querySelector('.mini-open').click();const tapOpens=document.querySelector('#fullPlayer').classList.contains('open');return {pass:current().id!==first&&!opened&&tapOpens,switched:current().id!==first,opened,tapOpens}});
+window.controllerTestResults={results};document.body.dataset.failed=String(results.filter(x=>!x.pass).length);document.querySelector('#results').textContent=JSON.stringify(window.controllerTestResults,null,2);
+})().catch(error=>{document.body.dataset.failed='1';document.querySelector('#results').textContent=error.stack});

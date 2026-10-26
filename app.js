@@ -658,6 +658,24 @@ document.querySelector('[data-copy-diagnostics]').onclick=()=>void copyWaveDiagn
 document.querySelectorAll('[data-open-more]').forEach(x=>x.onclick=()=>openSheet($('#moreSheet')));
 document.querySelector('[data-sheet-page]').onclick=()=>{closeSheets();showPage('history')};
 document.querySelectorAll('[data-mobile-target]').forEach(button=>button.onclick=()=>{let target=button.dataset.mobileTarget;document.querySelectorAll('[data-mobile-target]').forEach(x=>x.classList.toggle('active',x===button));if(target==='search')return openSearch();if(target==='likes')return showPage('likes');if(target==='genres'){closeSearch();showPage('home');return setTimeout(()=>$('#genreSection').scrollIntoView({behavior:'smooth',block:'start'}),50)}if(target==='more')return openSheet($('#moreSheet'));closeSearch();showPage(target==='profile'?'profile':'home')});
+// Swiping the artwork (full player) or the mini player sideways switches tracks: left for next, right for previous.
+// Vertical movement stays with the page (touch-action: pan-y), and a swipe does not count as a tap afterwards.
+function addTrackSwipe(target){
+  let start=null,dx=0,horizontal=false,swiped=false;
+  const reset=()=>{target.style.transition='';target.style.transform='';target.style.opacity=''};
+  target.addEventListener('pointerdown',event=>{if(event.button>0||!current())return;start={x:event.clientX,y:event.clientY,time:performance.now(),id:event.pointerId};dx=0;horizontal=false});
+  target.addEventListener('pointermove',event=>{if(!start||event.pointerId!==start.id)return;let x=event.clientX-start.x,y=event.clientY-start.y;if(!horizontal){if(Math.abs(y)>12&&Math.abs(y)>Math.abs(x)){start=null;return}if(Math.abs(x)<10)return;horizontal=true;try{target.setPointerCapture(event.pointerId)}catch{}}dx=x;target.style.transition='none';target.style.transform=`translateX(${dx}px) rotate(${dx/40}deg)`;target.style.opacity=String(Math.max(.35,1-Math.abs(dx)/320))});
+  const finish=event=>{
+    if(!start||event.pointerId!==start.id)return;let fast=Math.abs(dx)>30&&performance.now()-start.time<260,commit=horizontal&&(Math.abs(dx)>70||fast),direction=dx<0?1:-1;start=null;
+    if(!horizontal)return;swiped=true;setTimeout(()=>{swiped=false},60);target.style.transition='transform .18s ease,opacity .18s ease';
+    if(!commit||selectionInProgress||(direction<0&&index<1)){reset();return}
+    target.style.transform=`translateX(${direction*-60}%)`;target.style.opacity='0';runPlayerAction(direction>0?'next':'prev');
+    setTimeout(()=>{target.style.transition='none';target.style.transform=`translateX(${direction*40}%)`;requestAnimationFrame(()=>{target.style.transition='transform .22s ease,opacity .22s ease';target.style.transform='';target.style.opacity=''})},180);
+  };
+  target.addEventListener('pointerup',finish);target.addEventListener('pointercancel',event=>{if(start&&event.pointerId===start.id){start=null;if(horizontal)reset()}});
+  target.addEventListener('click',event=>{if(swiped){swiped=false;event.preventDefault();event.stopImmediatePropagation()}},true);
+}
+addTrackSwipe($('.full-artwork'));addTrackSwipe($('.mini-open'));
 let dragStart=null,dragY=0,dragHandle=$('.player-drag-handle');dragHandle.onpointerdown=event=>{dragStart={y:event.clientY,time:performance.now()};dragY=0;dragHandle.setPointerCapture(event.pointerId)};dragHandle.onpointermove=event=>{if(!dragStart)return;dragY=Math.max(0,event.clientY-dragStart.y);$('#fullPlayer').style.transform=`translateY(${dragY}px)`};dragHandle.onpointerup=event=>{if(!dragStart)return;let fast=dragY>35&&performance.now()-dragStart.time<260,close=dragY>85||fast;dragStart=null;dragHandle.releasePointerCapture(event.pointerId);if(close)closeFullPlayer();else $('#fullPlayer').style.transform=''};
 document.addEventListener('keydown',event=>{let layer=document.querySelector('.bottom-sheet.open,.full-player.open');if(event.key==='Tab'&&layer){let focusable=[...layer.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),a[href]')].filter(x=>x.offsetParent!==null);if(focusable.length){let first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}return}if(event.key!=='Escape')return;if(document.querySelector('.bottom-sheet.open'))closeSheets();else if($('#fullPlayer').classList.contains('open'))closeFullPlayer();else closeSearch()});
 window.addEventListener('scroll',()=>$('#scrollTop').classList.toggle('visible',scrollY>500),{passive:true});$('#scrollTop').onclick=()=>window.scrollTo({top:0,behavior:'smooth'});setPlayerState(PLAYER_STATES.IDLE);renderRepeat();
