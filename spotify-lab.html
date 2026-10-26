@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Волна · проверка Spotify</title>
+<style>
+  :root{--bg:#0b0b0f;--panel:#16161d;--line:#2a2a35;--text:#f2f2f5;--muted:#9a9aab;--ok:#1ed760;--bad:#ff6b6b;--warn:#ffcc66}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:720px;margin:0 auto;padding:24px 16px 80px}h1{font-size:22px;margin:0 0 4px}p.lead{color:var(--muted);margin:0 0 20px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 14px}h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.checks{list-style:none;margin:0;padding:0}.checks li{padding:4px 0}
+  .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+  button{background:var(--text);color:var(--bg);border:0;border-radius:999px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}button:disabled{opacity:.4;cursor:default}
+  input{flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font:inherit}
+  .results{list-style:none;margin:12px 0 0;padding:0}.results li{display:flex;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.results img{width:44px;height:44px;border-radius:6px;object-fit:cover;background:var(--line)}
+  .results .meta{flex:1;min-width:0}.results .meta b,.results .meta span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.results .meta span{color:var(--muted);font-size:13px}
+  .now{display:flex;gap:14px;align-items:center}.now img{width:72px;height:72px;border-radius:8px;object-fit:cover;background:var(--line)}.now .meta{flex:1;min-width:0}
+  progress{width:100%;height:4px;accent-color:var(--text)}pre{white-space:pre-wrap;word-break:break-word;color:var(--muted);font-size:12px;margin:0;max-height:220px;overflow:auto}
+</style>
+</head>
+<body>
+<main>
+  <h1>Проверка Spotify</h1>
+  <p class="lead">Отдельная страница для проверки: вход, Premium и воспроизведение официальным плеером Spotify. Основной сайт она не трогает.</p>
+
+  <section><h2>1. Браузер и аккаунт</h2><ul class="checks" id="checks"></ul>
+    <div class="row" style="margin-top:12px"><button id="login">Войти в Spotify</button><button id="logout" class="ghost" hidden>Выйти</button></div></section>
+
+  <section><h2>2. Поиск</h2><form class="row" id="searchForm"><input id="query" placeholder="Например: Lil Peep Star Shopping" autocomplete="off" disabled><button id="searchBtn" disabled>Найти</button></form><ul class="results" id="results"></ul></section>
+
+  <section><h2>3. Сейчас играет</h2><div class="now"><img id="cover" alt=""><div class="meta"><b id="title">—</b><div id="artist" style="color:var(--muted)">Плеер не запущен</div><progress id="progress" max="1" value="0"></progress></div><button id="toggle" disabled>▶</button></div></section>
+
+  <section><h2>Журнал</h2><pre id="log"></pre></section>
+</main>
+<script src="sources/spotify-auth.js?v=1"></script>
+<script>
+const $=s=>document.querySelector(s),player={sdk:null,deviceId:null,state:null};
+const log=(...parts)=>{const line=`${new Date().toLocaleTimeString()}  ${parts.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ')}`;$('#log').textContent=line+'\n'+$('#log').textContent};
+const check=(text,kind)=>{const li=document.createElement('li');li.className=kind;li.textContent=(kind==='ok'?'✓ ':kind==='bad'?'✗ ':'• ')+text;$('#checks').append(li);return li};
+
+async function widevine(){
+  if(!navigator.requestMediaKeySystemAccess)return false;
+  try{await navigator.requestMediaKeySystemAccess('com.widevine.alpha',[{initDataTypes:['cenc'],audioCapabilities:[{contentType:'audio/mp4;codecs="mp4a.40.2"'}]}]);return true}catch{return false}
+}
+
+async function init(){
+  await WaveSpotify.ready;
+  if(WaveSpotify.lastError)check(`Вход не удался: ${WaveSpotify.lastError}`,'bad');
+  const redirect=WaveSpotify.redirectUri(),registered=['https://dro0ne.github.io/wave-music-app/','http://127.0.0.1:8765/'];
+  if(!registered.includes(redirect))check(`Адрес ${redirect} не зарегистрирован в Spotify. Открой страницу через https://dro0ne.github.io/wave-music-app/spotify-lab.html или http://127.0.0.1:8765/spotify-lab.html`,'warn');
+  const drm=await widevine();check(drm?'Widevine есть: плеер Spotify может работать в этом браузере':'Widevine нет: в этом браузере плеер Spotify работать не будет',drm?'ok':'bad');
+  if(!WaveSpotify.connected()){check('Spotify не подключён','warn');return}
+  $('#login').hidden=true;$('#logout').hidden=false;
+  try{
+    const me=await WaveSpotify.api('/me');
+    check(`Аккаунт: ${me.display_name||me.id}, страна ${me.country||'?'}`,'ok');
+    check(me.product==='premium'?'Premium: да':`Premium: нет (${me.product}). Для воспроизведения нужен Premium`,me.product==='premium'?'ok':'bad');
+    $('#query').disabled=$('#searchBtn').disabled=false;$('#query').focus();
+    if(drm&&me.product==='premium')loadSdk();
+  }catch(error){check(`Spotify не ответил: ${error.message}`,'bad');log('me error',error.status,error.message)}
+}
+
+function loadSdk(){
+  window.onSpotifyWebPlaybackSDKReady=()=>{
+    const sdk=new Spotify.Player({name:'Волна',volume:.6,getOAuthToken:callback=>WaveSpotify.token().then(callback)});player.sdk=sdk;
+    sdk.addListener('ready',({device_id})=>{player.deviceId=device_id;check('Плеер Spotify запущен в этой вкладке','ok');log('ready',device_id)});
+    sdk.addListener('not_ready',({device_id})=>log('not_ready',device_id));
+    for(const kind of ['initialization_error','authentication_error','account_error','playback_error'])sdk.addListener(kind,({message})=>{check(`${kind}: ${message}`,'bad');log(kind,message)});
+    sdk.addListener('player_state_changed',state=>{player.state=state;render()});
+    sdk.connect().then(ok=>log('connect',ok));
+  };
+  const script=document.createElement('script');script.src='https://sdk.scdn.co/spotify-player.js';script.onerror=()=>check('Не удалось загрузить плеер Spotify (sdk.scdn.co)','bad');document.head.append(script);
+}
+
+function render(){
+  const s=player.state;if(!s){$('#toggle').disabled=true;return}
+  const t=s.track_window.current_track;$('#title').textContent=t.name;$('#artist').textContent=t.artists.map(a=>a.name).join(', ');$('#cover').src=t.album.images[0]?.url||'';
+  $('#toggle').disabled=false;$('#toggle').textContent=s.paused?'▶':'❚❚';$('#progress').max=s.duration||1;$('#progress').value=s.position;
+}
+setInterval(async()=>{if(player.sdk&&player.state&&!player.state.paused){const s=await player.sdk.getCurrentState();if(s){player.state=s;render()}}},500);
+
+$('#login').onclick=()=>WaveSpotify.login(location.pathname);
+$('#logout').onclick=()=>{player.sdk?.disconnect();WaveSpotify.logout();location.reload()};
+$('#toggle').onclick=()=>player.sdk?.togglePlay();
+$('#searchForm').onsubmit=async event=>{
+  event.preventDefault();const q=$('#query').value.trim();if(!q)return;
+  try{
+    const data=await WaveSpotify.api(`/search?type=track&limit=10&q=${encodeURIComponent(q)}`),list=$('#results');list.replaceChildren();
+    for(const t of data.tracks.items){
+      const li=document.createElement('li'),img=document.createElement('img'),meta=document.createElement('div'),b=document.createElement('b'),span=document.createElement('span'),btn=document.createElement('button');
+      img.src=t.album.images.at(-1)?.url||'';img.alt='';meta.className='meta';b.textContent=t.name;span.textContent=`${t.artists.map(a=>a.name).join(', ')} · ${Math.floor(t.duration_ms/60000)}:${String(Math.round(t.duration_ms/1000)%60).padStart(2,'0')}${t.external_ids?.isrc?' · ISRC '+t.external_ids.isrc:''}`;
+      btn.textContent='▶';btn.disabled=!player.deviceId;btn.onclick=()=>play(t.uri);meta.append(b,span);li.append(img,meta,btn);list.append(li);
+    }
+    log('search',q,data.tracks.items.length);
+  }catch(error){log('search error',error.status,error.message)}
+};
+async function play(uri){
+  try{await player.sdk.activateElement();await WaveSpotify.api(`/me/player/play?device_id=${player.deviceId}`,{method:'PUT',body:JSON.stringify({uris:[uri]})});log('play',uri)}
+  catch(error){log('play error',error.status,error.reason||'',error.message);check(`Не удалось включить: ${error.message}`,'bad')}
+}
+init();
+</script>
+</body>
+</html>

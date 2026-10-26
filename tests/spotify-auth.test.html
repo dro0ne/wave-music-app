@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<script>
+// The page pretends to be Spotify's redirect back: a pending sign-in in storage, ?code&state in the URL, fetch faked.
+const calls=[];let tokenReply={access_token:'A1',refresh_token:'R1',expires_in:3600,scope:'streaming'},apiReplies=[];
+localStorage.removeItem('waveSpotifyTokens');
+localStorage.setItem('waveSpotifyPending',JSON.stringify({verifier:'v'.repeat(64),state:'S1',returnTo:location.pathname,redirectUri:'http://127.0.0.1:8765/'}));
+history.replaceState(null,'',location.pathname+'?code=C1&state=S1#keep');
+window.fetch=async(url,init={})=>{url=String(url);calls.push({url,init});
+  if(url.endsWith('/api/token'))return {ok:true,status:200,json:async()=>tokenReply};
+  const reply=apiReplies.shift()||{status:200,body:{}};return {ok:reply.status<400,status:reply.status,headers:new Headers(reply.headers||{}),json:async()=>reply.body}};
+</script>
+<script src="../sources/spotify-auth.js"></script>
+<script src="spotify-auth.test.js"></script>
