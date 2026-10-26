@@ -372,3 +372,13 @@ body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-bre
 .import-use{height:auto;min-height:44px;padding:10px 16px;text-align:left;line-height:1.35}
 /* Track swipe (addTrackSwipe in app.js): sideways drags belong to the player, vertical ones to the page. */
 .full-artwork,.mini-open{touch-action:pan-y;user-select:none;-webkit-user-select:none;will-change:transform}
+/* Source logo in the artwork corner (markSource / sourceAttrs in app.js): small and translucent, so it informs without drawing the eye. */
+.full-artwork,.mini-art,.cover,.queue-art,.result-art{position:relative}
+.result-art{display:block;width:48px;height:48px}
+:is(.full-artwork,.mini-art,.cover,.queue-art,.result-art)[data-source]::after{content:'';position:absolute;right:clamp(2px,4%,12px);bottom:clamp(2px,4%,12px);width:clamp(14px,10%,28px);aspect-ratio:1;border-radius:50%;background:var(--source-logo) center/100% no-repeat;box-shadow:0 0 0 1.5px #0008,0 2px 6px #0006;opacity:.9;pointer-events:none}
+[data-source="spotify"]{--source-logo:url(assets/sources/spotify.svg)}
+[data-source="audius"]{--source-logo:url(assets/sources/audius.svg)}
+[data-source="archive"]{--source-logo:url(assets/sources/archive.svg)}
+[data-source="jamendo"]{--source-logo:url(assets/sources/jamendo.svg)}
+[data-source="soundcloud"]{--source-logo:url(assets/sources/soundcloud.svg)}
+[data-source="library"]{--source-logo:url(assets/sources/library.svg)}
