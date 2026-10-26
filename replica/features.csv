@@ -1,0 +1,64 @@
+feature,area,priority,original,clone,notes
+Мини-плеер на всех экранах,player,must,yes,no,в Волне есть #miniPlayer
+Полный плеер с большой обложкой,player,must,yes,no,в Волне есть #fullPlayer; нужен редизайн по S03/S04
+Лайк и «в плейлист» прямо на обложке,player,must,yes,no,
+Перемешать и повтор (выкл / все / один),player,must,yes,no,
+Очередь: просмотр и перетаскивание,player,must,yes,no,
+Кнопка «Похожие» заполняет пустую очередь,player,should,yes,no,в Волне это поток по настроению
+Бегущая строка для длинных названий,player,could,yes,no,
+Горизонтальная раскладка плеера,player,could,yes,no,
+Несколько раскладок полного плеера,appearance,should,yes,no,
+Светлая и тёмная тема,appearance,must,yes,no,
+Акцентный цвет,appearance,should,yes,no,
+Цвет интерфейса от обложки,appearance,should,yes,no,нужен CORS у картинок
+Фоны и прозрачность,appearance,could,yes,no,в Волне свои фоны (змейки и звёзды)
+Синхронный текст по строкам,lyrics,must,yes,no,LRCLIB
+Синхронный текст по словам,lyrics,should,yes,no,
+Текст без таймингов,lyrics,must,yes,no,
+Стиль и размер текста,lyrics,should,yes,no,
+Ручной сдвиг текста по времени,lyrics,should,yes,no,
+Текст остаётся открытым при смене трека,lyrics,should,yes,no,
+Эквалайзер с полосами,sound,must,yes,no,Web Audio; CORS у источника
+Пресеты эквалайзера,sound,must,yes,no,
+Реверб,sound,should,yes,no,
+8D-звук,sound,could,yes,no,
+Скорость воспроизведения,sound,must,yes,no,
+Запоминать скорость и EQ,sound,must,yes,no,
+Нормализация громкости,sound,should,yes,no,
+Кроссфейд,sound,should,yes,no,в Волне есть
+Воспроизведение без пауз (gapless),sound,could,yes,no,
+Таймер сна,sound,should,yes,no,
+Поиск по трекам артистам и альбомам,search,must,yes,no,в Волне есть #musicSearch
+Подсказки и автодополнение (Tab / →),search,should,yes,no,
+История поиска,search,should,yes,no,
+Фильтры результатов (чипы),search,should,yes,no,
+Библиотека с плейлистами,library,must,yes,no,
+Создать плейлист,library,must,yes,no,
+Добавлять / удалять / переставлять треки,library,must,yes,no,
+Закрепить плейлист первым,library,could,yes,no,
+Описание и даты в плейлисте,library,could,yes,no,
+Синхронизация библиотеки между устройствами,library,must,yes,no,в Волне есть аккаунты и синхронизация состояния
+Импорт плейлиста по ссылке,import,must,yes,no,в Волне есть импорт вкуса; нужен импорт в плейлист с поиском треков на легальных источниках
+Импорт целого профиля по ссылке,import,should,yes,no,
+Отчёт импорта: N из M найдено,import,must,yes,no,
+Свои локальные файлы,offline,must,yes,no,File System Access API / input type=file
+Кэш для офлайна,offline,should,yes,no,только треки с разрешённой загрузкой
+Теги и обложки из файлов,offline,could,yes,no,
+Восстановление трека или очереди при запуске,player,should,yes,no,
+Media Session и кнопки гарнитуры,player,must,yes,no,в Волне есть mediaSession
+Discord Rich Presence,integrations,could,yes,no,только десктоп
+Отдельное окно мини-плеера,desktop,could,yes,no,
+Десктопная сборка (Windows / macOS / Linux),platform,must,yes,no,Tauri
+Android-сборка с фоновым воспроизведением,platform,must,yes,no,Capacitor или TWA
+PWA с установкой,platform,should,no,no,в Волне есть manifest и sw.js; у Dotify нет
+Моя волна: бесконечный поток по вкусу,home,could,yes,no,ядро Волны; у Волны уже своя версия
+Проигрывать каталоги Spotify / Яндекса / VK / YouTube / Deezer,sources,must,yes,skip,нарушает условия сервисов и права на музыку; у Spotify обход защиты
+Скачивать треки в MP3 / FLAC из сервисов,offline,should,yes,skip,та же причина; офлайн только для своих файлов и разрешённых треков
+Встроенный прокси против блокировок,sources,should,yes,skip,обход блокировок; не нужен для легальных источников
+Поиск трека по звуку,search,could,yes,skip,нужна чужая база отпечатков; бесплатного легального API нет
+Друзья комнаты топ слушателей,social,could,yes,skip,вне выбранного среза; аудитория с нуля
+Уровни слава итоги месяца,social,could,yes,skip,вне выбранного среза
+Workshop: публикация пресетов и тем,social,could,yes,skip,вне выбранного среза
+Подписка Solo / Duo / Trio / Squad,billing,could,yes,skip,вне выбранного среза; решим на /replica-launch
+Чарты на их данных,home,could,yes,skip,чарты строятся на их аудитории
+iOS-сборка через IPA и подпись,platform,could,yes,skip,пользователь выбрал веб + десктоп + Android
