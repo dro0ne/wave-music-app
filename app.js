@@ -69,7 +69,7 @@ function renderMusicResults(message=''){
   let box=$('#musicResults');
   if(message){box.innerHTML=`<div class="search-message">${escapeHtml(message)}</div>`;box.classList.add('open');return}
   if(!searchResults.length){box.classList.remove('open');box.innerHTML='';return}
-  box.innerHTML=searchResults.map((t,i)=>`<button class="music-result" data-search-index="${i}"><img src="${escapeHtml(t.artwork||'wave-icon.svg')}" alt=""><span><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.artist||'Исполнитель')}${t.album?` · Альбом: ${escapeHtml(t.album)}`:''}</small></span><i>▶</i></button>`).join('');box.classList.add('open')
+  box.innerHTML=searchResults.map((t,i)=>`<button class="music-result" data-search-index="${i}"><img src="${escapeHtml(t.artwork||'wave-icon.svg')}" alt=""><span><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.artist||'Исполнитель')}${t.album?` · Альбом: ${escapeHtml(t.album)}`:''}${t.source==='spotify'?' · Spotify':''}</small></span><i>▶</i></button>`).join('');box.classList.add('open')
 }
 async function searchMusic(value){
   let query=value.trim(),request=++searchRequest;if(query.length<2){searchResults=[];renderMusicResults();return}
@@ -176,7 +176,7 @@ async function validateCandidate(selected,rank,token=null,signal=null){
   let track=selected.track,id=WaveRecommendation.idOf(track),cached=(verifiedPlayableTrackIds.get(id)||0)>Date.now();
   console.log('STREAM_VALIDATE_START',{trackId:id,title:track.title,rank,score:+selected.finalScore.toFixed(4)});
   if(track.source==='Local Demo')return track;
-  try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
+  try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=isSpotifyStream(resolved.stream)?{status:0,contentType:'spotify',validation:'spotify-sdk',waveAnalysisAllowed:false}:await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
   catch(error){if(signal?.aborted||token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});window.WaveTelemetry?.failed(track,`${error.name} ${error?.httpResult?.status||''}`);failedTrackIds.add(id,error);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
 }
 function selectedTrack(selected,track){
@@ -316,7 +316,7 @@ function invalidateNextBuffer(reason='manual',debounce=false){
   clearTimeout(preferenceFillTimer);if(current()&&reason!=='start'){if(debounce)preferenceFillTimer=setTimeout(()=>void fillPlaybackBuffer(),180);else void fillPlaybackBuffer()}
 }
 function preloadTrack(track,requestId){
-  cancelPreloadAudio();if(!track?.stream)return;
+  cancelPreloadAudio();if(!track?.stream||isSpotifyStream(track.stream))return;
   let element=new Audio();preloadMedia=element;preloadReady=false;
   element.dataset.trackId=String(track.id);element.dataset.generation=String(requestId);element.dataset.mediaElementId='media:'+ ++playbackController.mediaSequence;element.preload='auto';element.volume=+$('#volume').value/100;
   if(track.waveAnalysisAllowed)element.crossOrigin='anonymous';
@@ -518,13 +518,16 @@ async function recoverPlayback(binding){
   if(!recovered&&binding.event!==playbackController.event)return;
   if(!recovered){failedTrackIds.add(WaveRecommendation.idOf(track),{code:binding?.element?.error?.code||0});await next('error',true,operation)}
 }
+// Spotify tracks play through WaveSpotifyPlayer.Element, which stands in for <audio> (sources/spotify-player.js).
+function isSpotifyStream(value){return !!window.WaveSpotifyPlayer?.isUri(value)}
+function isSpotifyElement(value){return !!window.WaveSpotifyPlayer?.isElement(value)}
 async function sound(t){
   if(!t)return false;
   if(t.stream){
-    let prepared=preloadMedia?.dataset.trackId===String(t.id),event=playbackController.event;
+    let prepared=preloadMedia?.dataset.trackId===String(t.id),event=playbackController.event,spotify=isSpotifyStream(t.stream);
     if(prepared){media=preloadMedia;preloadMedia=null;preloadReady=false}
-    else if(media?.dataset.trackId!==String(t.id)||playbackController.bindings.get(media)?.event!==event){
-      if(media?.dataset.unlock==='true'){media.pause();media.removeAttribute('src')}else{releaseMedia(media);media=new Audio()}
+    else if(media?.dataset.trackId!==String(t.id)||playbackController.bindings.get(media)?.event!==event||isSpotifyElement(media)!==spotify){
+      if(!spotify&&media?.dataset.unlock==='true'){media.pause();media.removeAttribute('src')}else{releaseMedia(media);media=spotify?new WaveSpotifyPlayer.Element():new Audio()}
     }
     const element=media;delete element.dataset.unlock;element.dataset.trackId=String(t.id);element.dataset.mediaElementId||='media:'+ ++playbackController.mediaSequence;
     element.preload='auto';element.volume=element.dataset.crossfadeStart?0:+$('#volume').value/100;
@@ -607,7 +610,14 @@ window.WaveAccount?.onChange(renderIdentity);renderIdentity();
 // Signed in: pick up what was changed on another device (reloads once with that state).
 void window.WaveAccount?.sync().then(result=>{if(result.reload)location.reload()});
 // Profile: what the wave has learned so far, next to all the settings.
-function renderProfile(){let taste=Object.entries(state.taste?.genres||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g),likes=(state.likes||[]).length,heard=(state.history||[]).length,stat=(value,label,className)=>{let item=document.createElement('span');if(className)item.className=className;if(label!==null){let b=document.createElement('b');b.textContent=value;item.append(b,label)}else item.textContent=value;return item};$('#profileStats').replaceChildren(stat(likes,'в любимых'),stat(heard,'в истории'),stat(state.mood||'—','настроение'),...(taste.length?[stat('Чаще всего: '+taste.join(', '),null,'profile-taste')]:[]));$('#profileHint').textContent=likes?`${likes} в любимых`:'Вкус изучается'}
+function renderProfile(){let taste=Object.entries(state.taste?.genres||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g),likes=(state.likes||[]).length,heard=(state.history||[]).length,stat=(value,label,className)=>{let item=document.createElement('span');if(className)item.className=className;if(label!==null){let b=document.createElement('b');b.textContent=value;item.append(b,label)}else item.textContent=value;return item};$('#profileStats').replaceChildren(stat(likes,'в любимых'),stat(heard,'в истории'),stat(state.mood||'—','настроение'),...(taste.length?[stat('Чаще всего: '+taste.join(', '),null,'profile-taste')]:[]));$('#profileHint').textContent=likes?`${likes} в любимых`:'Вкус изучается';void renderSpotify()}
+// Spotify: the listener's own account; its tracks then show up in search and play through the official player.
+async function renderSpotify(){let box=$('#spotifyBox'),player=window.WaveSpotifyPlayer;if(!box||!window.WaveSpotify||!player)return;let note=el('p',{className:'account-note'}),row=el('div',{className:'account-row'});
+  if(!WaveSpotify.connected()){note.textContent='Подключи свой Spotify Premium: его треки появятся в поиске и будут играть прямо в Волне через официальный плеер Spotify. Вход идёт на сайте Spotify, пароль Волна не видит.';row.append(el('button',{type:'button',className:'account-primary',textContent:'Подключить Spotify',onclick:()=>WaveSpotify.login(location.pathname)}));box.replaceChildren(note,row);return}
+  note.textContent='Spotify подключён, проверяю плеер…';row.append(el('button',{type:'button',className:'account-secondary',textContent:'Отключить',onclick:()=>{player.disconnect();WaveSpotify.logout();void renderSpotify();toast('Spotify отключён')}}));box.replaceChildren(note,row);
+  try{await player.ready();let s=player.status;note.textContent=`Spotify подключён: ${s.account}${s.country?' · '+s.country:''}. Его треки есть в поиске и играют в этой вкладке.`}
+  catch(error){let s=player.status;note.textContent=s.widevine===false?'Spotify подключён, но этот браузер не может его проигрывать (нет Widevine). Открой Волну в Opera, Chrome, Edge или Firefox на компьютере.':s.premium===false?'Spotify подключён, но для воспроизведения нужен Premium.':`Spotify подключён, но плеер не запустился: ${error.message}`}
+}
 $('#particlesEnabled').onchange=e=>{state.particlesEnabled=e.target.checked;save();applyBackdropSettings()};
 $('#starsEnabled').onchange=e=>{state.starsEnabled=e.target.checked;save();applyBackdropSettings()};applyBackdropSettings();
 window.waveBackdrop.setMood(state.mood);
@@ -659,3 +669,5 @@ if(!window.__WAVE_TEST_MODE__&&'serviceWorker'in navigator&&(location.protocol==
 if(tabChannel)tabChannel.onmessage=event=>{if(event.data==='claim-audio'&&playing){pause();toast('Музыка продолжилась в другой вкладке')}};
 window.addEventListener('pageshow',event=>{if(event.persisted){renderPlayerUI();updateProgressUI(elapsed)}});
 window.onbeforeunload=stopSound;choices();libraries();
+// Back from the Spotify sign-in: say how it went. A connected Spotify warms its player up so search can offer it.
+window.WaveSpotify?.ready.then(handled=>{if(handled){showPage('profile');toast(WaveSpotify.lastError?`Spotify не подключился: ${WaveSpotify.lastError}`:'Spotify подключён')}if(WaveSpotify.connected()&&!window.__WAVE_TEST_MODE__)void window.WaveSpotifyPlayer?.ready().catch(()=>{})});

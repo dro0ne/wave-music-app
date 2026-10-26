@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<script>
+// A fake Web Playback SDK, Web API and Widevine, so the element's behaviour can be driven state by state.
+const FAKE={api:[],sdk:[],me:{product:'premium',id:'me',display_name:'Me',country:'EE'},fail404:0,players:[],state:null,search:null};
+Object.defineProperty(navigator,'requestMediaKeySystemAccess',{value:async()=>({}),configurable:true});
+window.Spotify={Player:class{constructor(options){this.options=options;this.listeners={};FAKE.players.push(this)}addListener(name,fn){this.listeners[name]=fn}async connect(){setTimeout(()=>this.listeners.ready({device_id:'D'+FAKE.players.length}));return true}disconnect(){FAKE.sdk.push(['disconnect'])}async activateElement(){}async setVolume(v){FAKE.sdk.push(['volume',v])}async pause(){FAKE.sdk.push(['pause'])}async resume(){FAKE.sdk.push(['resume'])}async seek(ms){FAKE.sdk.push(['seek',ms])}async getCurrentState(){return FAKE.state}emit(state){FAKE.state=state;this.listeners.player_state_changed(state)}}};
+window.WaveSpotify={connected:()=>true,token:async()=>'T',api:async(path,init={})=>{FAKE.api.push([path,init]);if(path==='/me')return FAKE.me;if(path.startsWith('/me/player/play')){if(FAKE.fail404){FAKE.fail404--;throw Object.assign(Error('Device not found'),{status:404})}return null}if(path.startsWith('/search'))return FAKE.search;return null}};
+</script>
+<script src="../genre-normalization.js"></script><script src="../sources/track-model.js"></script>
+<script src="../sources/spotify-player.js"></script><script src="../sources/spotify-source.js"></script>
+<script src="spotify-player.test.js"></script>
