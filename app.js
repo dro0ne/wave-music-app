@@ -625,6 +625,8 @@ async function renderSpotify(){let box=$('#spotifyBox'),player=window.WaveSpotif
 }
 $('#particlesEnabled').onchange=e=>{state.particlesEnabled=e.target.checked;save();applyBackdropSettings()};
 $('#starsEnabled').onchange=e=>{state.starsEnabled=e.target.checked;save();applyBackdropSettings()};applyBackdropSettings();
+function applyLook(){let simple=state.look!=='bright';document.documentElement.dataset.look=simple?'simple':'bright';let box=$('#lookSimple');if(box)box.checked=simple;document.querySelector('meta[name=theme-color]')?.setAttribute('content',simple?'#0a0a0a':'#0b0b11')}
+if($('#lookSimple'))$('#lookSimple').onchange=e=>{state.look=e.target.checked?'simple':'bright';save();applyLook()};applyLook();
 window.waveBackdrop.setMood(state.mood);
 function stopWaveVisualizer(){window.waveBackdrop.setState(playerState||PLAYER_STATES.IDLE)}
 function startWaveVisualizer(){window.waveBackdrop.setState(playerState||PLAYER_STATES.PLAYING)}

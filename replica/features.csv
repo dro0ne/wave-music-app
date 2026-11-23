@@ -51,7 +51,7 @@ Discord Rich Presence,integrations,could,yes,no,только десктоп
 Десктопная сборка (Windows / macOS / Linux),platform,must,yes,no,Tauri
 Android-сборка с фоновым воспроизведением,platform,must,yes,no,Capacitor или TWA
 PWA с установкой,platform,should,no,no,в Волне есть manifest и sw.js; у Dotify нет
-Моя волна: бесконечный поток по вкусу,home,could,yes,no,ядро Волны; у Волны уже своя версия
+Моя волна: бесконечный поток по вкусу,wave,must,yes,partial,ядро Волны; проверить подгрузку без конца и дедуп (F10)
 Свой порядок источников для трека (файлы → Audius → Spotify → YouTube),sources,must,no,no,своё у Волны; результат сопоставления кэшируется
 Spotify: вход и воспроизведение через Web Playback SDK,sources,must,yes,no,Premium пользователя; OAuth PKCE без сервера; у Dotify Spotify через прокси
 YouTube: официальный IFrame-плеер как запасной источник,sources,should,yes,no,ключ Data API ограничить доменом
@@ -67,3 +67,11 @@ Workshop: публикация пресетов и тем,social,could,yes,skip,
 Подписка Solo / Duo / Trio / Squad,billing,could,yes,skip,вне выбранного среза; решим на /replica-launch
 Чарты на их данных,home,could,yes,skip,чарты строятся на их аудитории
 iOS-сборка через IPA и подпись,platform,could,yes,skip,пользователь выбрал веб + десктоп + Android
+Волна: несколько настроений сразу,wave,must,yes,no,Dotify 1.3.0; сейчас одно state.mood
+Волна: выбор языка треков,wave,must,yes,no,Dotify 1.3.0; track.language уже считается
+Волна: подмешивать новое по вкусу (разведка),wave,must,yes,partial,Dotify 2.3.7; есть ползунок discovery
+Волна: профиль вкуса по признакам треков и похожесть кандидатов,wave,must,yes,no,Dotify векторы 1.2.5/2.3.6; у нас клиентская версия
+Волна: онбординг — выбрать артистов при пустом вкусе,wave,should,yes,no,Dotify 2.3.7
+Волна: шапка «Играет из: Моя волна» и +N новых треков,wave,should,yes,partial,Dotify 1.2.6
+Волна: офлайн-дизлайк не теряется,wave,should,yes,no,Dotify 1.3.0
+Волна друга (по чужому вкусу),wave,could,yes,no,Dotify 2.3.7; нужны друзья/публичные профили

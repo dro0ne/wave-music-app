@@ -1,0 +1,85 @@
+/* Простое оформление: почти чёрный фон, белый акцент, без свечений и градиентов.
+   Включается атрибутом <html data-look="simple"> (по умолчанию). Яркое — data-look="bright". */
+html[data-look=simple]{--bg:#0a0a0a;--surface:#141414;--surface-2:#1c1c1c;--text:#f5f5f5;--muted:#8d8d8d;--green:#fff;--line:#242424;--radius:18px;--shadow:0 16px 40px #000a}
+html[data-look=simple] body{background:var(--bg)}
+html[data-look=simple] body:before,html[data-look=simple] .ambient-glow{display:none}
+html[data-look=simple] button:focus-visible,html[data-look=simple] a:focus-visible,html[data-look=simple] input:focus-visible{outline:2px solid #fffa}
+
+/* навигация */
+html[data-look=simple] .brand-icon{stroke:#fff}
+html[data-look=simple] .desktop-sidebar{background:#0a0a0a;border-color:var(--line)}
+html[data-look=simple] .desktop-nav button.active,html[data-look=simple] .desktop-sidebar .profile.active{background:#ffffff12;color:#fff;box-shadow:none}
+html[data-look=simple] .mobile-nav{background:#0d0d0deb;border-color:var(--line)}
+html[data-look=simple] .mobile-nav button.active{background:#ffffff12;color:#fff}
+html[data-look=simple] .learn{color:var(--muted)}
+
+/* заголовки секций */
+html[data-look=simple] .hero p,html[data-look=simple] .section-heading p,html[data-look=simple] .library>p,html[data-look=simple] .profile-head p{color:var(--muted);letter-spacing:.12em}
+html[data-look=simple] .hero{border:0;background:none;box-shadow:none}
+html[data-look=simple] .hero h1{text-shadow:none;letter-spacing:-2px}
+html[data-look=simple] .hero em{color:var(--muted)}
+
+/* кнопка волны: тонкое белое кольцо */
+html[data-look=simple] .wave-orb:before{background:none;border:1.5px solid #ffffffd0;box-shadow:none;animation:none}
+html[data-look=simple] .orb-glow{display:none}
+html[data-look=simple] .orb-ring{border-color:#ffffff1c}
+html[data-look=simple] .orb-core{background:#141414;border-color:#ffffff26;box-shadow:0 20px 50px #000c}
+html[data-look=simple] .orb-core i{color:#fff}
+html[data-look=simple] .wave-orb:hover .orb-core{border-color:#fff6}
+html[data-look=simple] .wave-orb[data-state=LOADING] .orb-core i{border-color:#fff3;border-top-color:#fff}
+
+/* поиск */
+html[data-look=simple] .music-search>label,html[data-look=simple] .genre-search{background:var(--surface);border-color:transparent}
+html[data-look=simple] .music-search>label:focus-within,html[data-look=simple] .genre-search:focus-within{border-color:#fff5;box-shadow:none}
+html[data-look=simple] .music-search svg,html[data-look=simple] .genre-search svg{color:var(--muted)}
+
+/* настроения: тёмные карточки, выбранная — белая */
+html[data-look=simple] .mood,html[data-look=simple] .mood:nth-child(n+4){border:1px solid transparent;background:var(--surface);box-shadow:none}
+html[data-look=simple] .mood:before{opacity:.35;filter:grayscale(.6)}
+html[data-look=simple] .mood:after{background:linear-gradient(180deg,#0a0a0a00 10%,#0a0a0acc 60%,#0a0a0a 100%)}
+html[data-look=simple] .mood:hover{border-color:#ffffff30}
+html[data-look=simple] .mood.selected{border-color:#fff;background:var(--surface);color:#fff;box-shadow:inset 0 0 0 1px #fff}
+html[data-look=simple] .mood.selected i{color:#fff}
+html[data-look=simple] .mood small{color:var(--muted)}
+html[data-look=simple] .show-moods:hover{border-color:#fff6;color:#fff}
+
+/* жанры: капсулы, выбранная — белая */
+html[data-look=simple] .genre{background:var(--surface);border-color:transparent;color:#d8d8d8}
+html[data-look=simple] .genre:hover{border-color:#ffffff40}
+html[data-look=simple] .genre.selected{background:#fff;border-color:#fff;color:#0a0a0a}
+html[data-look=simple] .genre.selected:before,html[data-look=simple] #genres .genre.selected:before{color:#0a0a0a}
+
+/* ползунки и переключатели */
+html[data-look=simple] input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(to right,#fff 0,#fff var(--value),#2e2e2e var(--value),#2e2e2e 100%)}
+html[data-look=simple] input[type=range]::-webkit-slider-thumb{border-color:#0a0a0a;background:#fff}
+html[data-look=simple] input[type=range]::-moz-range-thumb{border-color:#0a0a0a;background:#fff}
+html[data-look=simple] .switch input:checked+span{background:#fff}
+html[data-look=simple] .switch input:checked+span:after{background:#0a0a0a}
+html[data-look=simple] .setting-row>output{color:#fff}
+html[data-look=simple] .account-primary{background:#fff;color:#0a0a0a}
+html[data-look=simple] .account-box,html[data-look=simple] .setting-row,html[data-look=simple] .profile-actions button{background:var(--surface);border-color:transparent}
+html[data-look=simple] .account-box input:focus,html[data-look=simple] .import-box textarea:focus{border-color:#fff6}
+html[data-look=simple] .profile-head .avatar i{background:#fff;color:#0a0a0a}
+html[data-look=simple] .profile-actions svg,html[data-look=simple] .profile-actions .sheet-symbol,html[data-look=simple] .bottom-sheet>button svg,html[data-look=simple] .sheet-symbol{color:#fff}
+
+/* нижний плеер (ПК) и мини-плеер */
+html[data-look=simple] .desktop-player{background:#0d0d0df2;border-color:var(--line);box-shadow:none}
+html[data-look=simple] .control-buttons #play{background:#fff;color:#0a0a0a;box-shadow:none}
+html[data-look=simple] .cover,html[data-look=simple] .full-artwork{background-color:var(--surface-2);background-image:none;box-shadow:0 18px 50px #000b}
+html[data-look=simple] .mini-player{background:#161616f5;border-color:#ffffff10;box-shadow:0 10px 30px #000a}
+html[data-look=simple] .mini-progress{background:linear-gradient(to right,#fff var(--progress),#ffffff1c var(--progress))}
+
+/* полный плеер: шапка-капсула, управление в карточках */
+html[data-look=simple] .full-player{background:#0a0a0a}
+html[data-look=simple] .full-player header strong{padding:8px 16px;border-radius:999px;background:var(--surface);color:#bdbdbd;font-size:13px;font-weight:600}
+html[data-look=simple] .full-player header .icon-button{background:var(--surface);border-color:transparent}
+html[data-look=simple] .full-artwork{border-radius:22px}
+html[data-look=simple] .primary-controls{padding:16px 10px;border-radius:28px;background:var(--surface)}
+html[data-look=simple] .primary-controls .primary-play{background:#fff;color:#0a0a0a;box-shadow:none}
+html[data-look=simple] .secondary-controls{padding:6px;border-radius:24px;background:var(--surface)}
+html[data-look=simple] .secondary-controls button.active{background:#ffffff14;color:#fff}
+html[data-look=simple] .queue-item.current{background:#ffffff0f}
+html[data-look=simple] .bottom-sheet{background:#121212;border-color:var(--line)}
+html[data-look=simple] .avatar-view{background:#2a2a2a;color:#fff}
+html[data-look=simple] .full-meta{text-align:center;align-items:center}
+html[data-look=simple] .full-meta a,html[data-look=simple] .music-result a{color:#cfcfcf}
