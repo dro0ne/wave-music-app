@@ -385,3 +385,6 @@ body.wave-playing .wave-orb:before,body.wave-playing .orb-glow{animation:orb-bre
 /* The placeholder glyph stays under real artwork otherwise (renderPlayerUI toggles .has-artwork). */
 [data-player-artwork].has-artwork{color:transparent}
 [data-player-artwork].has-artwork>*{visibility:hidden}
+[data-source="youtube"]{--source-logo:url(assets/sources/youtube.svg)}
+[data-source="deezer"]{--source-logo:url(assets/sources/deezer.svg)}
+[data-source="yandex"]{--source-logo:url(assets/sources/yandex.svg)}

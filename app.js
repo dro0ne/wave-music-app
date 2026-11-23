@@ -71,10 +71,18 @@ function renderMusicResults(message=''){
   if(!searchResults.length){box.classList.remove('open');box.innerHTML='';return}
   box.innerHTML=searchResults.map((t,i)=>`<button class="music-result" data-search-index="${i}"><span class="result-art"${sourceAttrs(t)}><img src="${escapeHtml(t.artwork||'wave-icon.svg')}" alt=""></span><span><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.artist||'Исполнитель')}${t.album?` · Альбом: ${escapeHtml(t.album)}`:''}</small></span><i>▶</i></button>`).join('');box.classList.add('open')
 }
+// Best match first: query words found in artist and title, catalogue recordings (Spotify, Deezer, YouTube) ahead of
+// uploads, covers and remixes below the original unless the query asks for them.
+function rankSearch(tracks,query){
+  const words=text=>String(text||'').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(Boolean),want=words(query),catalog={spotify:3,deezer:2,youtube:1},variant=/(cover|remix|bootleg|karaoke|lyrics?|nightcore|sped|slowed|type beat|instrumental|mashup|flip|edit)/i,asked=variant.test(query);
+  return tracks.map((t,i)=>{const have=new Set(words(`${t.artist} ${t.title}`)),artist=words(t.artist),hit=want.filter(w=>have.has(w)).length/Math.max(1,want.length),artistHit=want.some(w=>artist.includes(w))?.3:0,junk=!asked&&variant.test(t.title)?.6:0,source=Math.max(catalog[t.source]||0,...(t.alternatives||[]).map(a=>catalog[a.source]||0))*.08;return {t,i,score:hit+artistHit-junk+source}}).sort((a,b)=>b.score-a.score||a.i-b.i).map(x=>x.t);
+}
 async function searchMusic(value){
   let query=value.trim(),request=++searchRequest;if(query.length<2){searchResults=[];renderMusicResults();return}
   renderMusicResults('Ищем треки и альбомы…');
-  try{let results=await sourceManager.searchTracks(query);if(request!==searchRequest)return;searchResults=results.slice(0,30);renderMusicResults(searchResults.length?'':'Ничего не найдено')}
+  if(window.WaveLinks?.looksLikeLink(query))try{let linked=await WaveLinks.resolve(query);if(request!==searchRequest)return;if(linked){searchResults=linked.tracks||[];renderMusicResults(linked.message||(searchResults.length?'':'По ссылке ничего не нашлось'));return}}
+  catch{if(request===searchRequest){searchResults=[];renderMusicResults('Не получилось открыть ссылку');return}}
+  try{let results=await sourceManager.searchTracks(query);if(request!==searchRequest)return;searchResults=rankSearch(results,query).slice(0,30);renderMusicResults(searchResults.length?'':'Ничего не найдено')}
   catch{if(request===searchRequest){searchResults=[];renderMusicResults('Поиск временно недоступен')}}
 }
 $('#musicSearch').oninput=e=>{clearTimeout(searchTimer);let value=e.target.value;if(value.trim().length<2){searchRequest++;searchResults=[];renderMusicResults();return}searchTimer=setTimeout(()=>searchMusic(value),320)};
@@ -176,7 +184,7 @@ async function validateCandidate(selected,rank,token=null,signal=null){
   let track=selected.track,id=WaveRecommendation.idOf(track),cached=(verifiedPlayableTrackIds.get(id)||0)>Date.now();
   console.log('STREAM_VALIDATE_START',{trackId:id,title:track.title,rank,score:+selected.finalScore.toFixed(4)});
   if(track.source==='Local Demo')return track;
-  try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=isSpotifyStream(resolved.stream)?{status:0,contentType:'spotify',validation:'spotify-sdk',waveAnalysisAllowed:false}:await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
+  try{let resolved=await sourceManager.resolveTrack(track,{signal});if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(cached){startupMark('stream_validation_ok',track);return {...resolved,waveAnalysisAllowed:waveAnalyzableTrackIds.has(id)}};let result=isExternalStream(resolved.stream)?{status:0,contentType:'embedded',validation:'official-player',waveAnalysisAllowed:false}:await validateStreamUrl(resolved.stream,signal);if(signal?.aborted)return null;if(token&&!tokenIsCurrent(token))return null;if(result.waveAnalysisAllowed)waveAnalyzableTrackIds.add(id);resolved={...resolved,waveAnalysisAllowed:result.waveAnalysisAllowed};console.log('STREAM_VALIDATE_OK',{trackId:id,status:result.status,contentType:result.contentType,source:resolved.activeSource,validation:result.validation});verifiedPlayableTrackIds.set(id,Date.now()+PLAYABLE_CACHE_TTL);startupMark('stream_validation_ok',track);return resolved}
   catch(error){if(signal?.aborted||token&&!tokenIsCurrent(token))return null;console.warn('STREAM_VALIDATE_FAILED',{trackId:id,title:track.title,rank,status:error?.httpResult?.status||0,errorName:error.name});window.WaveTelemetry?.failed(track,`${error.name} ${error?.httpResult?.status||''}`);failedTrackIds.add(id,error);logPlayback('SOURCE_FAILURE',{failedTrackKey:playbackKey(track),errorName:error.name,errorCode:error?.httpResult?.status??null});return null}
 }
 function selectedTrack(selected,track){
@@ -316,7 +324,7 @@ function invalidateNextBuffer(reason='manual',debounce=false){
   clearTimeout(preferenceFillTimer);if(current()&&reason!=='start'){if(debounce)preferenceFillTimer=setTimeout(()=>void fillPlaybackBuffer(),180);else void fillPlaybackBuffer()}
 }
 function preloadTrack(track,requestId){
-  cancelPreloadAudio();if(!track?.stream||isSpotifyStream(track.stream))return;
+  cancelPreloadAudio();if(!track?.stream||isExternalStream(track.stream))return;
   let element=new Audio();preloadMedia=element;preloadReady=false;
   element.dataset.trackId=String(track.id);element.dataset.generation=String(requestId);element.dataset.mediaElementId='media:'+ ++playbackController.mediaSequence;element.preload='auto';element.volume=+$('#volume').value/100;
   if(track.waveAnalysisAllowed)element.crossOrigin='anonymous';
@@ -442,7 +450,7 @@ async function playExplicit(track,reason='search',targetIndex=null){
 function prev(){if(selectionInProgress||index<1)return;const previousIndex=index-1;return playExplicit(queue[previousIndex],'previous',previousIndex)}
 
 // Where a track plays from: a small logo in the artwork corner (styles.css, [data-source]::after).
-const SOURCE_NAMES={spotify:'Spotify',audius:'Audius',archive:'Internet Archive',jamendo:'Jamendo',soundcloud:'SoundCloud',library:'Волна'};
+const SOURCE_NAMES={spotify:'Spotify',youtube:'YouTube',deezer:'Deezer',audius:'Audius',archive:'Internet Archive',jamendo:'Jamendo',soundcloud:'SoundCloud',library:'Волна'};
 function sourceId(t){return [t?.activeSource,t?.source].find(id=>SOURCE_NAMES[id])||''}
 function sourceAttrs(t){let id=sourceId(t);return id?` data-source="${id}" title="Источник: ${SOURCE_NAMES[id]}"`:''}
 function markSource(el,t){let id=sourceId(t);if(id){el.dataset.source=id;el.title=`Источник: ${SOURCE_NAMES[id]}`}else{delete el.dataset.source;el.removeAttribute('title')}}
@@ -526,13 +534,17 @@ async function recoverPlayback(binding){
 // Spotify tracks play through WaveSpotifyPlayer.Element, which stands in for <audio> (sources/spotify-player.js).
 function isSpotifyStream(value){return !!window.WaveSpotifyPlayer?.isUri(value)}
 function isSpotifyElement(value){return !!window.WaveSpotifyPlayer?.isElement(value)}
+// YouTube and SoundCloud play through their official embedded players (sources/embed-players.js), same idea.
+function isEmbedStream(value){return !!window.WaveEmbeds?.isUri(value)}
+function isExternalStream(value){return isSpotifyStream(value)||isEmbedStream(value)}
+function mediaKind(element){return isSpotifyElement(element)?'spotify':window.WaveEmbeds?.isElement(element)?'embed':'audio'}
 async function sound(t){
   if(!t)return false;
   if(t.stream){
-    let prepared=preloadMedia?.dataset.trackId===String(t.id),event=playbackController.event,spotify=isSpotifyStream(t.stream);
+    let prepared=preloadMedia?.dataset.trackId===String(t.id),event=playbackController.event,spotify=isSpotifyStream(t.stream),kind=spotify?'spotify':isEmbedStream(t.stream)?'embed':'audio';
     if(prepared){media=preloadMedia;preloadMedia=null;preloadReady=false}
-    else if(media?.dataset.trackId!==String(t.id)||playbackController.bindings.get(media)?.event!==event||isSpotifyElement(media)!==spotify){
-      if(!spotify&&media?.dataset.unlock==='true'){media.pause();media.removeAttribute('src')}else{releaseMedia(media);media=spotify?new WaveSpotifyPlayer.Element():new Audio()}
+    else if(media?.dataset.trackId!==String(t.id)||playbackController.bindings.get(media)?.event!==event||mediaKind(media)!==kind){
+      if(kind==='audio'&&media?.dataset.unlock==='true'){media.pause();media.removeAttribute('src')}else{releaseMedia(media);media=kind==='spotify'?new WaveSpotifyPlayer.Element():kind==='embed'?new WaveEmbeds.Element():new Audio()}
     }
     const element=media;delete element.dataset.unlock;element.dataset.trackId=String(t.id);element.dataset.mediaElementId||='media:'+ ++playbackController.mediaSequence;
     element.preload='auto';element.volume=element.dataset.crossfadeStart?0:+$('#volume').value/100;
@@ -626,6 +638,8 @@ async function renderSpotify(){let box=$('#spotifyBox'),player=window.WaveSpotif
 $('#particlesEnabled').onchange=e=>{state.particlesEnabled=e.target.checked;save();applyBackdropSettings()};
 $('#starsEnabled').onchange=e=>{state.starsEnabled=e.target.checked;save();applyBackdropSettings()};applyBackdropSettings();
 function applyLook(){let simple=state.look!=='bright';document.documentElement.dataset.look=simple?'simple':'bright';let box=$('#lookSimple');if(box)box.checked=simple;document.querySelector('meta[name=theme-color]')?.setAttribute('content',simple?'#0a0a0a':'#0b0b11')}
+function renderServices(){let yt=window.WaveSources?.youtube;if(!yt||!$('#youtubeStatus'))return;let b=yt.budget(),spotify=!!window.WaveSpotifyPlayer?.usable();$('#youtubeStatus').textContent=yt.key()?(b.blocked?'Лимит поиска на сегодня закончился, завтра заработает':`Подключён · подбор треков сегодня ${b.used} из ${b.limit}`):'Нужен свой ключ для поиска';$('#deezerStatus').textContent=spotify?'Поиск и чарты; целиком играет через Spotify':yt.key()?'Поиск; целиком играет через YouTube':'Поиск; без Spotify или YouTube — только 30 секунд'}
+if($('#youtubeKeyForm'))$('#youtubeKeyForm').onsubmit=async e=>{e.preventDefault();let yt=WaveSources.youtube,value=$('#youtubeKey').value.trim(),message=$('#servicesMessage');yt.setKey(value);if(!value){message.textContent='Ключ YouTube удалён';renderServices();return}message.textContent='Проверяем ключ…';try{await yt.check();message.textContent='YouTube подключён — его треки появятся в поиске';$('#youtubeKey').value=''}catch(error){yt.setKey('');message.textContent=`Ключ не подошёл: ${error.message}`}renderServices()};renderServices();
 if($('#lookSimple'))$('#lookSimple').onchange=e=>{state.look=e.target.checked?'simple':'bright';save();applyLook()};applyLook();
 window.waveBackdrop.setMood(state.mood);
 function stopWaveVisualizer(){window.waveBackdrop.setState(playerState||PLAYER_STATES.IDLE)}
